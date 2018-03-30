@@ -1,5 +1,13 @@
 package utilities
 
+import java.io.File
+
+import quiver.{Context, Graph, LEdge, LNode, empty}
+import utilities.FileHandling.openFileWithIterator
+import scala.collection.immutable.HashSet
+
+import scala.collection.immutable.{HashMap, HashSet}
+
 /**
   * Author: Alex N. Salazar
   * Created on 16-2-2018
@@ -7,31 +15,42 @@ package utilities
   *
   * Description:
   */
-trait GFAutils {
+object GFAutils {
 
-  val getGFAHeader = "H\tHLGG"
+  trait ConstructGFA {
 
-  /**
-    * Function to construct a Segment line for a given node
-    *
-    * @return String
-    */
-  def constructSegmentLine: Int => String = node => Seq("S", node, "N").mkString("\t")
+    val getGFAHeader = "H\tHLGG"
 
-  /**
-    * Function to construct a Link line for a given pair of nodes
-    *
-    * @return
-    */
-   def constructLinkLine: (Int, Int) => String = (node, edge) =>
-    Seq("L", node, "+", edge, "+", "1M").mkString("\t")
+    /**
+      * Function to construct a Segment line for a given node
+      *
+      * @return String
+      */
+    def constructSegmentLine: Int => String = node => Seq("S", node, "N").mkString("\t")
 
-  /**
-    * Function to create optional column of the number of genomes in node
-    * @return
-    */
-  def addGenomeCountField: Option[Int] => String = genomes =>
-    "\tFC:i:"+ {if(genomes == None) 1 else genomes.get}
+    /**
+      * Function to construct a Link line for a given pair of nodes
+      *
+      * @return
+      */
+    def constructLinkLine: (Int, Int) => String = (node, edge) =>
+      Seq("L", node, "+", edge, "+", "1M").mkString("\t")
 
-  def addColourField: String => String = colour => "\tID:Z" + colour
+    /**
+      * Function to create optional column of the number of genomes in node
+      *
+      * @return
+      */
+    def addGenomeCountField: Option[Int] => String = genomes =>
+      "\tFC:i:" + {
+        if (genomes == None) 1 else genomes.get
+      }
+
+    def addColourField: String => String = colour => "\tID:Z" + colour
+  }
+
+  trait ReadGFA {
+
+  }
+
 }

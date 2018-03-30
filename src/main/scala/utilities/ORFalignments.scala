@@ -22,13 +22,18 @@ trait ORFalignments {
     * Function to determine
     * @return
     */
-  def computeSigma: Array[String] => Double = alignment => alignment(9).toDouble/alignment(1).toDouble
+  def computeSigma: Array[String] => Double = alignment =>alignment(9).toDouble/alignment(1).toDouble
+
 
   /**
-    * Function to determine
+    * Function to determine Gamma (min seq length / max seq length)
     * @return
     */
-  def computeGamma: Array[String] => Double = alignment => alignment(10).toDouble/alignment(1).toDouble
+  def computeGamma: Array[String] => Double = alignment => {
+    //alignment(10).toDouble/alignment(1).toDouble
+    val (a,b) = (alignment(1).toDouble, alignment(6).toDouble)
+    List(a,b).min / List(a,b).max
+  }
 
   /**
     * Function to convert pairwise alignment to ORFalignment object
