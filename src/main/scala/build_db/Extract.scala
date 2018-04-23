@@ -1,4 +1,4 @@
-package extract_module
+package build_db
 
 import java.io.{File, PrintWriter}
 
@@ -78,6 +78,8 @@ object Extract extends tLines with GFFutils with MinimapUtils {
     val pw_id_mapping = new PrintWriter(config.outputDir + "/orf2id_mapping.txt")
     //output file for repetative regions
     val pw_repetative_regions = new PrintWriter(config.outputDir + "/repetative_regions.txt")
+    //output file for id to fasta
+    val pw_id2fasta = new PrintWriter(config.outputDir + "/id2fasta.txt")
     /**
       * Method to construct database for each given genome
       * @param genome_id Starting integer to be used as global ORF ID (will be incremented
@@ -112,6 +114,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
         else {
           //output generic name and unique ID assigned
           pw_id_mapping.println(Seq(generic_name, genome_id, id).mkString("\t"))
+          pw_id2fasta.println(Seq(id, genome_id + ".orfs.sequences.fasta").mkString("\t"))
           //get sequence
           val sequence = fasta_entry.getSequence.substring(start - 1, end)
           //output sequence
@@ -299,7 +302,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
       constructDataBase(genome._1, genome._2, genome._3, config.outputDir, id)
     }}
     //close output files
-    List(pw_Y, pw_Y_prime, pw_Z, pw_Z_prime, pw_id_mapping, pw_repetative_regions).foreach(_.close())
+    List(pw_Y, pw_Y_prime, pw_Z, pw_Z_prime, pw_id_mapping, pw_repetative_regions, pw_id2fasta).foreach(_.close())
     println("Successfully completed!" + timeStamp)
   }
 
