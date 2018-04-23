@@ -1,4 +1,4 @@
-package construct
+package canonical_quiver
 
 /**
   * Author: Alex N. Salazar

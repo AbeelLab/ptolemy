@@ -1,4 +1,4 @@
-package construct
+package canonical_quiver
 
 import java.io.{File, PrintWriter}
 
@@ -14,13 +14,14 @@ import scala.collection.immutable.{HashMap, HashSet}
   *
   * Description:
   */
-object HLGG extends ConstructGFA {
+object ConstuctCanonicalQuiver extends ConstructGFA {
 
   case class Config(
                      syntenicAnchors: File = null,
                      database: File = null,
                      outputDir: File = null,
                      verbose: Boolean = false,
+                     msa: Boolean = false,
                      dump: Boolean = false
                    )
 
@@ -36,6 +37,9 @@ object HLGG extends ConstructGFA {
         c.copy(outputDir = x)
       } text ("Output directory.")
       note("\nOPTIONAL\n")
+      opt[Unit]("msa-groups") action { (x, c) =>
+        c.copy(msa = true)
+      } text ("Turn on to output file of syntenic anchors to database for inducing MSA in each syntenic anchor.")
       opt[Unit]("dump") action { (x, c) =>
         c.copy(dump = true)
       }
@@ -103,7 +107,14 @@ object HLGG extends ConstructGFA {
       pw.close
     }
 
-    println("Constructing HLGG" + timeStamp)
+    if(config.msa){
+      println("User specified MSA groups to database. Writing to disk" + timeStamp)
+      val pw = new PrintWriter(config.database + "/msa_groups.txt")
+      syntenic_anchors.toList.groupBy(_._2).foreach(sa => pw.println(sa._1 + "\t" + sa._2.map(_._1).mkString(",")))
+      pw.close
+    }
+
+    println("Constructing canonical quiver" + timeStamp)
     //iterate through each sequence and construct HLGG in context of syntenic anchors
     val (hlgg_edges, hlgg_nodes) =
       openFileWithIterator(path_hashmap_Z)
@@ -127,10 +138,10 @@ object HLGG extends ConstructGFA {
         }
       }
       }
-    println("Constructed HLGG with " + hlgg_nodes.size + " nodes and " + hlgg_edges.map(_._2.size).sum +
+    println("Constructed canonical quiver with " + hlgg_nodes.size + " nodes and " + hlgg_edges.map(_._2.size).sum +
       " edges" + timeStamp)
     println("Writing GFA file to disk" + timeStamp)
-    val pw = new PrintWriter(config.outputDir + "/hlgg.gfa")
+    val pw = new PrintWriter(config.outputDir + "/canonical_quiver.gfa")
     pw.println(getGFAHeader)
     hlgg_nodes.foreach(x => pw.println(constructSegmentLine(x) + addGenomeCountField(node_to_genome_count.get(x))))
     hlgg_edges.foreach { case (node, edges) => edges.foreach(edge => pw.println(constructLinkLine(node, edge))) }
@@ -151,7 +162,7 @@ object HLGG extends ConstructGFA {
       pw.println(Seq("G", split.head, split(1)).mkString("\t"))
     })
     pw.close
-    val pw_orfids = new PrintWriter(config.outputDir + "/orf2node_id.txt")
+    val pw_orfids = new PrintWriter(config.database + "/orf2node_id.txt")
     openFileWithIterator(path_orfids).foreach(line => {
       val split = line.split("\t")
       val node_id = getNodeID(split(2).toInt)
