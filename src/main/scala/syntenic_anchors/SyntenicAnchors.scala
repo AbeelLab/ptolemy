@@ -1,4 +1,4 @@
-package cluster_module
+package syntenic_anchors
 
 import java.io.{File, PrintWriter}
 
@@ -27,9 +27,7 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
                      database: File = null,
                      outputDir: File = null,
                      gamma: Double = 0.75,
-                     dpenalty: Int = 1,
                      f: Int = 10,
-                     alpha: Int = 5,
                      verbose: Boolean = false,
                      dump: Boolean = false,
                      syntenicFraction: Double = 0.5,
@@ -54,16 +52,10 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
       opt[Double]("gamma") action { (x, c) =>
         c.copy(gamma = x)
       } text ("Gamma-value for minimum coverage of ORF alignment (default is 0.3).")
-      opt[Int]("flanking-window") action { (x, c) =>
+      opt[Int]("f") action { (x, c) =>
         c.copy(f = x)
       } text ("Flanking window (default is 10).")
-      opt[Int]("alpha") action { (x, c) =>
-        c.copy(alpha = x)
-      } text ("BRH penalty (default to 5).")
-      opt[Int]("displacement-penalty") action { (x, c) =>
-        c.copy(dpenalty = x)
-      } text ("Displacement penalty (default is 1).")
-      opt[Double]("syntenic-fraction") action { (x, c) =>
+      opt[Double]("beta") action { (x, c) =>
         c.copy(syntenicFraction = x)
       } text ("Maximum allowed (default is 0.5).")
       opt[Int]("kmer-size") action { (x, c) =>
@@ -274,7 +266,7 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
       }
       //when L is empty, return BRH penalty, else compute minimum of positional displacement
       val d = L.size match {
-        case 0 => -config.alpha
+        case 0 => -(config.f*config.syntenicFraction)
         case _ => L.map(orf_l => computeDisplacement(orf_l, orf_b)).min
       }
       if (config.verbose) println("------Phi value is " + d + " with L size of " + L.size + " for orf " + orf_a)
@@ -363,7 +355,7 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
       if (config.verbose) println("----Computing displacements with " + x + " value")
       //compute displacement in the perspective or orf i
       val perspective_orf_i = {
-        if (!isWithinBoundaries(orf_i, x)) config.alpha
+        if (!isWithinBoundaries(orf_i, x)) (config.f*config.syntenicFraction)
         else {
           val phi_score = phi(orf_i + x, orf_j, w)
           val displacement_score = computeDisplacement(orf_i + x, orf_i)
@@ -372,7 +364,7 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
       }
       //compute displacement in the perspective or orf i
       val perspective_orf_j = {
-        if (!isWithinBoundaries(orf_j, y)) config.alpha
+        if (!isWithinBoundaries(orf_j, y)) (config.f*config.syntenicFraction)
         else {
           val phi_score = phi(orf_j + y, orf_i, w)
           val displacment_score = computeDisplacement(orf_j + y, orf_j)
@@ -380,8 +372,8 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
         }
       }
       if (config.verbose) println("----Found the following values " + (perspective_orf_i, perspective_orf_j) + " " +
-        "translating to " + List(perspective_orf_i, perspective_orf_j).max + " * " + config.dpenalty)
-      List(perspective_orf_i, perspective_orf_j).max * config.dpenalty
+        "translating to " + List(perspective_orf_i, perspective_orf_j).max)
+      List(perspective_orf_i, perspective_orf_j).max
     }
 
     def constructSyntenicVectors: (Int, Int) =>
