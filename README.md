@@ -6,7 +6,7 @@ Ptolemy has been accepted as a conference proceeding paper at [ECCB 2018](http:/
 
 # Executable JAR
 
-Executable jar files are available under releases.
+Executable jar files are available under [releases](https://github.com/AbeelLab/ptolemy/releases/latest).
 
 # Running Ptolemy
 
