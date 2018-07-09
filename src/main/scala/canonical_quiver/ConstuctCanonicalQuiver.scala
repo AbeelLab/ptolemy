@@ -73,7 +73,7 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
     }
     //get total number of genomes
     val total_genomes = openFileWithIterator(path_hashmap_Y).toList.size
-    println("--Starting node is: " + node_id)
+    println(timeStamp + "--Starting node is: " + node_id)
     println(timeStamp + "Formatting syntenic anchors")
     //open syntenic anchors and format to hashmap as original orf id -> (assigned node id, genome count)
     val (syntenic_anchors, node_to_genome_count, next_id) =
