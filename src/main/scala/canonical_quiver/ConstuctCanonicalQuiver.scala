@@ -26,7 +26,7 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
                    )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("construct-hlgg") {
+    val parser = new scopt.OptionParser[Config]("canonical-quiver") {
       opt[File]('s', "syntenic-anchors") required() action { (x, c) =>
         c.copy(syntenicAnchors = x)
       } text ("Path to file containing syntenic anchors.")
@@ -56,11 +56,11 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
   }
 
   def constructHLGG(config: Config): Unit = {
-    println("Fetching hashmap Z" + timeStamp)
+    println(timeStamp + "Fetching hashmap Z")
     val path_hashmap_Z = config.database.listFiles().find(_.getName == "global_z.txt").get
     val path_hashmap_Y = config.database.listFiles().find(_.getName == "global_y.txt").get
     val path_orfids = config.database.listFiles().find(_.getName == "orf2id_mapping.txt").get
-    println("Fetching starting node ID" + timeStamp)
+    println(timeStamp + "Fetching starting node ID")
     //get last orf id to be used as the starting node id for new nodes
     val node_id = {
       //open file as iterator
@@ -74,7 +74,7 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
     //get total number of genomes
     val total_genomes = openFileWithIterator(path_hashmap_Y).toList.size
     println("--Starting node is: " + node_id)
-    println("Formatting syntenic anchors" + timeStamp)
+    println(timeStamp + "Formatting syntenic anchors")
     //open syntenic anchors and format to hashmap as original orf id -> (assigned node id, genome count)
     val (syntenic_anchors, node_to_genome_count, next_id) =
       openFileWithIterator(config.syntenicAnchors).foldLeft(HashSet[Set[Int]]())((sa, line) => {
@@ -108,13 +108,13 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
     }
 
     if(config.msa){
-      println("User specified MSA groups to database. Writing to disk" + timeStamp)
+      println(timeStamp + "User specified MSA groups to database. Writing to disk")
       val pw = new PrintWriter(config.database + "/msa_groups.txt")
       syntenic_anchors.toList.groupBy(_._2).foreach(sa => pw.println(sa._1 + "\t" + sa._2.map(_._1).mkString(",")))
       pw.close
     }
 
-    println("Constructing canonical quiver" + timeStamp)
+    println(timeStamp + "Constructing canonical quiver")
     //iterate through each sequence and construct HLGG in context of syntenic anchors
     val (hlgg_edges, hlgg_nodes) =
       openFileWithIterator(path_hashmap_Z)
@@ -138,9 +138,9 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
         }
       }
       }
-    println("Constructed canonical quiver with " + hlgg_nodes.size + " nodes and " + hlgg_edges.map(_._2.size).sum +
-      " edges" + timeStamp)
-    println("Writing GFA file to disk" + timeStamp)
+    println(timeStamp + "Constructed canonical quiver with " + hlgg_nodes.size + " nodes and " + hlgg_edges.map(_._2.size).sum +
+      " edges")
+    println(timeStamp + "Writing GFA file to disk")
     val pw = new PrintWriter(config.outputDir + "/canonical_quiver.gfa")
     pw.println(getGFAHeader)
     hlgg_nodes.foreach(x => pw.println(constructSegmentLine(x) + addGenomeCountField(node_to_genome_count.get(x))))
@@ -169,7 +169,7 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
       pw_orfids.println(Seq(split(0), split(1), node_id).mkString("\t"))
     })
     pw_orfids.close
-    println("Successfully completed!" + timeStamp)
+    println(timeStamp + "Successfully completed!")
   }
 
   /**

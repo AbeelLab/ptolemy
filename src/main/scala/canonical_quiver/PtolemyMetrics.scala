@@ -50,7 +50,7 @@ object PtolemyMetrics extends GFFutils with ORFalignments with MinimapUtils {
   }
 
   def ptolemyMetrics(config: Config): Unit = {
-    println("Processing GFA file" + timeStamp)
+    println(timeStamp + "Processing GFA file")
     //open canonical quiver in GFA format
     val (sequence2nodes, genome2sequence, node2labels) = openFileWithIterator(config.quiver)
       .foldLeft((HashMap[String, Seq[Int]](), HashMap[String, Set[String]](), HashMap[Int, Set[String]]())) {
@@ -134,7 +134,7 @@ object PtolemyMetrics extends GFFutils with ORFalignments with MinimapUtils {
     pw.println("Node\tLabels")
     node2labels.foreach(x => pw.println(Seq(x._1, x._2.size).mkString("\t")))
     pw.close
-
+    println(timeStamp + "Successfully completed!")
   }
 
   /**

@@ -31,7 +31,7 @@ object StructuralVariantCaller extends ConstructGFA {
                    )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("construct-hlgg") {
+    val parser = new scopt.OptionParser[Config]("variant-calling") {
       opt[File]('h', "hlgg-gfa") required() action { (x, c) =>
         c.copy(hlgg = x)
       } text ("GFA file of the HLGG.")
@@ -62,7 +62,7 @@ object StructuralVariantCaller extends ConstructGFA {
   }
 
   def structuralVariantCaller(config: Config): Unit = {
-    println("Loading canonical quiver" + timeStamp)
+    println(timeStamp + "Loading canonical quiver")
     //load HLGG from given GFA file
     val hlgg = new HLGG(config.hlgg)
     //get all genomes in the canonical quiver
@@ -70,17 +70,17 @@ object StructuralVariantCaller extends ConstructGFA {
     //get the reference architecture, if specified
     val (ref_arrows, ref_nodes, ref_labels) = {
       if(config.reference == null) {
-        println("Using weighted graph as reference population" + timeStamp)
+        println(timeStamp + "Using weighted graph as reference population")
         (HashMap[String, scala.IndexedSeq[Int]](), HashSet[Int](), HashSet[String]())
       }
       else {
-        println("User specified a reference population:" + timeStamp)
+        println(timeStamp + "User specified a reference population:")
         //get all genome IDs in file
         val reference_population = openFileWithIterator(config.reference).foldLeft(HashSet[String]())((b,a) => b+a)
         //assert that they all exist
         reference_population.foreach(x => assert(all_genomes.contains(x), "The following genome does not exist in " +
           "the provided canonical quiver: " + x))
-        println("Using the following genomes as the reference population:" + timeStamp)
+        println(timeStamp + "Using the following genomes as the reference population:")
         println("--" + reference_population.mkString("\n--"))
         //extract map containing reference sequence identifier and the corresponding arrows in positional order
         val _ref_arrows = hlgg.sequence_set.filter(x => reference_population(hlgg.genome_set(x._1)))
@@ -90,8 +90,8 @@ object StructuralVariantCaller extends ConstructGFA {
         val _ref_nodes = _ref_arrows.flatMap(_._2).foldLeft(HashSet[Int]())((set, node) => set + node)
         //create hashset containing all sequence identifiers of the reference
         val _ref_labels = _ref_arrows.map(_._1).foldLeft(HashSet[String]())((set, label) => set + label)
-        println("Reference population has " + _ref_arrows.map(_._2.size).sum + " arrows with " + _ref_nodes.size +
-          " nodes and " + _ref_labels.size + " individual labels" + timeStamp)
+        println(timeStamp + "Reference population has " + _ref_arrows.map(_._2.size).sum + " arrows with " + _ref_nodes.size +
+          " nodes and " + _ref_labels.size + " individual labels")
         (_ref_arrows, _ref_nodes, _ref_labels)
       }
     }
@@ -269,18 +269,18 @@ object StructuralVariantCaller extends ConstructGFA {
       }
     }
 
-    println("Getting connected components" + timeStamp)
+    println(timeStamp + "Getting connected components")
     //get all resulting disconnect components
     val ccs = getCCs(hlgg.graph, List(), true)
-    println("--Found " + ccs.size + " connected components" + timeStamp)
-    println("Performing maximally-labelled path traversals:" + timeStamp)
+    println(timeStamp + "--Found " + ccs.size + " connected components")
+    println(timeStamp + "Performing maximally-labelled path traversals:")
     //iterate through each disconnected component and identify structural variant calls
     ccs.foldLeft(0)((cc_id, cc) => {
-      println("--Current connected component " + cc_id + " has " + cc.labEdges.size + " total edges" + timeStamp)
+      println(timeStamp + "--Current connected component " + cc_id + " has " + cc.labEdges.size + " total edges")
       val common_population_label = {
         if(!ref_labels.isEmpty) None
         else {
-          println("----Calculating max weighted-graph population" + timeStamp)
+          println(timeStamp + "----Calculating max weighted-graph population")
           val edge_label_freq = {
             if(config.traverseNodes) cc.labNodes.map(_.label).groupBy(identity)
               .mapValues(x => x.size).toList.filter(_._1.size >= 0.75 * all_genomes.size).sortBy(-_._2)
@@ -300,21 +300,20 @@ object StructuralVariantCaller extends ConstructGFA {
         if(config.traverseNodes) {
           val nodes_to_remove = cc.labNodes.filter(x => x.label.exists(ref_labels(_)))
             .foldLeft(HashSet[Int]())((b,a) => b + (a.vertex))
-          println("----Found " + nodes_to_remove.size + " nodes to remove")
+          println(timeStamp + "----Found " + nodes_to_remove.size + " nodes to remove")
           val nodesremoved = nodes_to_remove.foldLeft(cc)((b, a) => b.removeNode(a))
           val edges_to_remove = nodesremoved.labEdges.filter(x => nodes_to_remove(x.from) || nodes_to_remove(x.to))
-          println("----Found " + edges_to_remove.size + " edges to remove")
-          println(nodes_to_remove(81570))
+          println(timeStamp + "----Found " + edges_to_remove.size + " edges to remove")
           edges_to_remove.foldLeft(nodesremoved)((b,a) => b.removeLEdge(a))
         }
         else {
           //remove all arrows in the reference direction; as well as singleton cycles (e.g. annotation errors)
           val edges_to_remove = cc.labEdges.filter(x => isReferenceLabel(x.label) || x.from == x.to)
-          println("----Removing " + edges_to_remove.size + " reference edges" + timeStamp)
+          println(timeStamp + "----Removing " + edges_to_remove.size + " reference edges")
           edges_to_remove.foldLeft(cc)((b, a) => b.removeLEdge(a))
         }
       }
-      println("--Obtaining family of subgraphs" + timeStamp)
+      println(timeStamp + "--Obtaining family of subgraphs")
       //get family of subgraphs
       val family_subgraphs = getCCs(ref_edges_removed, List(), false)
       println("----Partitioned into a family of subgraphs of " + family_subgraphs.size + " subgraphs" + timeStamp)
@@ -322,14 +321,14 @@ object StructuralVariantCaller extends ConstructGFA {
       val output = new PrintWriter(config.outputDir + "/connected_component." + cc_id + ".gfa")
       //output family of subgraphs to gfa
       family_subgraphs.foreach(s => graphToGFA(s, output))
-      println("----Computing maximially-labelled paths" + timeStamp)
+      println(timeStamp + "----Computing maximially-labelled paths")
       //iterate throug each subgraph and characterize maximally-labelled paths
       family_subgraphs.foldLeft(0) {
         case (local_id, family_subgraph) => {
           //get mlp for current family subgraph
           val maximially_labelled_paths = maximalLabeledPath(family_subgraph, List()).filter(!_.isEmpty)
           if(maximially_labelled_paths.isEmpty){
-            println("------Warning: empty maximally-labelled-path")
+            println(timeStamp + "------Warning: empty maximally-labelled-path")
             local_id
           }
           else {

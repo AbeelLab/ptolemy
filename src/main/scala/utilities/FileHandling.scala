@@ -15,7 +15,7 @@ object FileHandling {
 
 
   /**Method to get current time stamp*/
-  def timeStamp = " (" + Calendar.getInstance().getTime() + ")"
+  def timeStamp = "(" + Calendar.getInstance().getTime() + "): "
 
   /**Method to get name of file*/
   def getFileName: File => String = file => file.getName.substring(0, file.getName.lastIndexOf("."))

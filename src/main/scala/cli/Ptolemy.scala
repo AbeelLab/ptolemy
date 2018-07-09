@@ -30,7 +30,7 @@ object Ptolemy {
         case "syntenic-anchors"    => syntenic_anchors.SyntenicAnchors.main(args.drop(1))
         case "canonical-quiver"    => canonical_quiver.ConstuctCanonicalQuiver.main(args.drop(1))
         case "run-msa"             => msa.RunMSA.main(args.drop(1))
-        case "variant-calling"     => variant_calling.HighLevelVariantCaller.main(args.drop(1))
+        case "variant-calling"     => variant_calling.StructuralVariantCaller.main(args.drop(1))
         case "parents"             => parental_perspective.CharacterizeWithParents.main(args.drop(1))
         case _                     => println(help)
       }

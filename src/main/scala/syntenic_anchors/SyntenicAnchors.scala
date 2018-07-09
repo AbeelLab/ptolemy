@@ -38,7 +38,7 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
                    )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("get-brhs") {
+    val parser = new scopt.OptionParser[Config]("syntenic-anchors") {
       opt[File]("db") required() action { (x, c) =>
         c.copy(database = x)
       } text ("Directory path of database (e.g. output directory of 'extract' module).")
@@ -96,12 +96,12 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
     }
     //get fasta files of orf sequences
     val sequences = config.database.listFiles().filter(_.getName.endsWith("fasta"))
-    println("Found " + sequences.size + " genomes in database" + timeStamp)
+    println(timeStamp + "Found " + sequences.size + " genomes in database")
     //obtain hashmap H, brhs for a given ORF
     val hashmap_H = {
       //for when the user specified BRh file
       if (config.brh != null) {
-        println("User specified BRHs file. Constructing hashmap H from file." + timeStamp)
+        println(timeStamp + "User specified BRHs file. Constructing hashmap H from file.")
         verifyFile(config.brh)
         //iterate through file and create hashmap
         openFileWithIterator(config.brh).foldLeft(HashMap[Int, Set[Int]]())((h, line) => {
@@ -111,8 +111,8 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
       }
       //constructh hashmap H from pairwise ORF alignments
       else {
-        println("Performing " + (sequences.size * sequences.size) + " pairwise ORF-set alignments (in parallel " +
-          " if multiple cores are available): " + timeStamp)
+        println(timeStamp + "Performing " + (sequences.size * sequences.size) + " pairwise ORF-set alignments (in parallel" +
+          " if multiple cores are available): ")
         //obtain H_prime hashmap, best alignments by iterating through them in parallel and merging at the end
         val hashmap_H_prime = {
           //iterate through sequences as query, then as ref for pairwise alignments
@@ -139,7 +139,7 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
           hashmap_H_prime.foreach(x => pw.println(Seq(x._1, x._2.mkString(",")).mkString("\t")))
           pw.close
         }
-        println("Collected " + hashmap_H_prime.map(_._2.size).sum + " best pairwise ORF alignments" + timeStamp)
+        println(timeStamp + "Collected " + hashmap_H_prime.map(_._2.size).sum + " best pairwise ORF alignments")
         //iterate through each query orf and retain only BRHs
         hashmap_H_prime.map { case (query_orf, best_alignments) => {
           //remove cases where there is no bi-direction best alignment (e.g. query <-> ref)
@@ -156,8 +156,8 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
     val pw_brhs = new PrintWriter(config.outputDir + "/brhs.txt")
     hashmap_H.foreach { case (orf, brhs) => pw_brhs.println(Seq(orf, brhs.mkString(",")).mkString("\t")) }
     pw_brhs.close
-    println("Collected " + hashmap_H.map(_._2.size).sum + " BRHs" + timeStamp)
-    println("Loading hash tables Z, Z', boundaries, and positionals" + timeStamp)
+    println(timeStamp + "Collected " + hashmap_H.map(_._2.size).sum + " BRHs")
+    println(timeStamp + "Loading hash tables Z, Z', boundaries, and positionals")
     //load hashmaps Z and Z'
     val (boundaries_map, hashmap_Z, hashmap_Z_positional) =
     //iterate through each entry in the file
@@ -428,7 +428,7 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
       (sv_l, sv_r, sv_l_prime, sv_r_prime, general_flank)
     }
 
-    println("Computing syntenic scores for " + hashmap_H.size + " BRH sets" + timeStamp)
+    println(timeStamp + "Computing syntenic scores for " + hashmap_H.size + " BRH sets")
     val syntenic_anchor_pairs = hashmap_H.toList.par.flatMap { case (orf, brhs) => {
       progress(10000)
       /**
@@ -531,9 +531,9 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
     }
     //get set of orfs that are part of the syntenic anchors and compute size of the set
     val total_orfs_in_syntenic_anchor_pairs = syntenic_anchor_pairs.seq.flatMap(x => List(x._1, x._2)).toSet
-    println("Found " + total_orfs_in_syntenic_anchor_pairs.size + " involved in " + syntenic_anchor_pairs.size +
-      " syntenic anchor pairs" + timeStamp)
-    println("Constructing syntenic anchor graph." + timeStamp)
+    println(timeStamp + "Found " + total_orfs_in_syntenic_anchor_pairs.size + " involved in " + syntenic_anchor_pairs.size +
+      " syntenic anchor pairs")
+    println(timeStamp + "Constructing syntenic anchor graph.")
     //construct syntenic anchor graph
     val syntenic_anchor_graph =
       syntenic_anchor_pairs.foldLeft(HashMap[Int, Set[Int]]()) { case (map_syntenic_anchors, (orf_a, orf_b)) => {
@@ -584,8 +584,8 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
     val pw_syntenic_anchors = new PrintWriter(config.outputDir + "/syntenic_anchors.txt")
     //get connected components in the syntenic anchor graph
     val syntenic_anchors = identifySyntenicAnchorCC(total_orfs_in_syntenic_anchor_pairs, List())
-    println("Found " + syntenic_anchors.size + " connected components." + timeStamp)
-    println("Writing to disk." + timeStamp)
+    println(timeStamp + "Found " + syntenic_anchors.size + " connected components.")
+    println(timeStamp + "Writing to disk.")
     syntenic_anchors.foreach(cc => {
       cc.foreach(node => {
         pw_syntenic_anchors.println(Seq(node, cc.filterNot(_ == node).mkString(",")).mkString("\t"))
@@ -593,7 +593,7 @@ object SyntenicAnchors extends tLines with GFFutils with ORFalignments with Mini
     })
     pw_syntenic_anchors.close
     pw_syntenic_scores.close
-    println("Successfully completed!" + timeStamp)
+    println(timeStamp + "Successfully completed!")
 
   }
 

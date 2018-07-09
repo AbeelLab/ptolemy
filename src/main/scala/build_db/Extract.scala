@@ -29,13 +29,13 @@ object Extract extends tLines with GFFutils with MinimapUtils {
                    )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("extract-orfs") {
+    val parser = new scopt.OptionParser[Config]("extract") {
       opt[File]('g', "genomes") required() action { (x, c) =>
         c.copy(genomesFile = x)
       } text ("Tab-delimited file containing (genome ID, FASTA path, and GFF file), on per line.")
       opt[File]('o', "output-database") required() action { (x, c) =>
         c.copy(outputDir = x)
-      } text ("Output directory for database to be stored. If it doesn't not exist, the directory will be created.")
+      } text ("Output directory for database to be stored.")
       note("\nOPTIONAL\n")
       opt[Int]('r', "repeat-radius") action { (x, c) =>
         c.copy(repeatRadius = x)
@@ -63,8 +63,8 @@ object Extract extends tLines with GFFutils with MinimapUtils {
   def extract(config: Config): Unit ={
     //open list of genomes
     val genomes = tLines(config.genomesFile).map(getGenomesInfo(_))
-    println("Found " + genomes.size + " genome entries" + timeStamp)
-    println("--Verifying paths")
+    println(timeStamp + "Found " + genomes.size + " genome entries")
+    println(timeStamp + "--Verifying paths")
     //verify that all paths provided are valid
     genomes.foreach(x => verifyCorrectGenomeEntries(x._1, x._2, x._3))
     //verify that all genome IDs are unique
@@ -93,7 +93,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
 
       //open GFF file
       val orfs = tLines(gff).map(toGFFLine(_)).filter(_.feature == "gene")
-      if(config.verbose) println("----Found " + orfs.size + " ORFs" + timeStamp)
+      if(config.verbose) println(timeStamp + "----Found " + orfs.size + " ORFs")
       val sequences_file = new File(dir + "/" + genome_id + ".orfs.sequences.fasta")
       //create output file to store ORF sequences
       val pw_sequences = new PrintWriter(sequences_file)
@@ -295,15 +295,15 @@ object Extract extends tLines with GFFutils with MinimapUtils {
       repetative_regions.foreach(x => pw_repetative_regions.println(x.mkString(",")))
       new_id
     }
-    println("Constructing database: " + timeStamp)
+    println(timeStamp + "Constructing database: ")
     //iterate through each assembly and construct database
     genomes.foldLeft(0){ case (id,genome) => {
-      println("--" + genome._1 + timeStamp)
+      println(timeStamp + "--" + genome._1)
       constructDataBase(genome._1, genome._2, genome._3, config.outputDir, id)
     }}
     //close output files
     List(pw_Y, pw_Y_prime, pw_Z, pw_Z_prime, pw_id_mapping, pw_repetative_regions, pw_id2fasta).foreach(_.close())
-    println("Successfully completed!" + timeStamp)
+    println(timeStamp + "Successfully completed!")
   }
 
 
@@ -311,7 +311,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
   def getMaximalORF: (List[GFFLine], Boolean) => (String,Int,Int) = (gffs, warning) => {
     val largest = gffs.maxBy(x => (x.end - x.start)+1)
     if(gffs.size > 1 && warning) {
-      println("----WARNING: overlapping ORFs detected. Using the following maximal start,end positions: " +
+      println(timeStamp + "----WARNING: overlapping ORFs detected. Using the following maximal start,end positions: " +
         (largest.start,largest.end))
     }
     (makeGenericORFname(largest), largest.start, largest.end)
