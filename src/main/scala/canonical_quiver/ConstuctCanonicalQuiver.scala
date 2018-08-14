@@ -22,6 +22,7 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
                      outputDir: File = null,
                      verbose: Boolean = false,
                      msa: Boolean = false,
+                     isCircular: Boolean = false,
                      dump: Boolean = false
                    )
 
@@ -37,6 +38,9 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
         c.copy(outputDir = x)
       } text ("Output directory.")
       note("\nOPTIONAL\n")
+      opt[Unit]("circular") action { (x, c) =>
+        c.copy(isCircular = true)
+      } text ("Genome can be circular (default is false).")
       opt[Unit]("msa-groups") action { (x, c) =>
         c.copy(msa = true)
       } text ("Turn on to output file of syntenic anchors to database for inducing MSA in each syntenic anchor.")
@@ -124,8 +128,14 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
         val (sequence, orfs) = getSequence(_sequence)
         orfs.size match {
           case 1 => (adj_map, node_set + orfs.head)
-          case _ => //iterate through each orf as (node, edge)
-            orfs.sliding(2).foldLeft((adj_map, node_set)) { case ((local_adj_map, local_node_set), adj) => {
+          case _ => {
+            //create the sliding window depending on whether genomes are cicular or not
+            val orf_slide = {
+              val tmp = orfs.sliding(2)
+              if(!config.isCircular) tmp else tmp ++ Iterator(Seq(orfs.last, orfs.head))
+            }
+            //iterate through each orf as (node, edge)
+            orf_slide.foldLeft((adj_map, node_set)) { case ((local_adj_map, local_node_set), adj) => {
               //determine node and edge id
               val node_id = getNodeID(adj(0))
               val edge_id = getNodeID(adj(1))
@@ -134,7 +144,8 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
               //update accordingly
               (local_adj_map + (node_id -> current.+(edge_id)), (local_node_set + (node_id)) + edge_id)
             }
-        }
+            }
+          }
         }
       }
       }

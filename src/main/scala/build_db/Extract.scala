@@ -108,8 +108,8 @@ object Extract extends tLines with GFFutils with MinimapUtils {
         //get maximal ORF information
         val (generic_name, start, end) = getMaximalORF(overlaps, config.showWarnings)
         if(end > size) {
-          if(config.showWarnings) println("--WARNING: Skipping ORF with coordinates outside of sequence boundary: " +
-            (generic_name, start, end))
+          if(config.showWarnings) println(timeStamp + "--WARNING: Skipping ORF with coordinates outside of sequence " +
+            "boundary: " + (generic_name, start, end))
         }
         else {
           //output generic name and unique ID assigned
@@ -150,7 +150,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
           val entry_id_and_genome_id = genome_id + "_" + entry_id
           //find corresponding ORFs in sequence
           val corresponding_orfs = orfs.filter(x => x.chrm == entry_id)
-          if(config.verbose) println("------Found " + corresponding_orfs.size + " ORFs in " + entry_id +
+          if(config.verbose) println(timeStamp + "------Found " + corresponding_orfs.size + " ORFs in " + entry_id +
             "\n------Adding:")
           //iterate through each orf and output to database
           val (updated_Z, last_orf_ID, last_overlaps) = corresponding_orfs.foldLeft((Z, orf_id, List[GFFLine]())){
@@ -231,7 +231,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
                     local_g + (edge -> (current_edge + node))
                   }) + (node -> edges)
                 }}
-        if(config.verbose) println("--Found repeat graph of at least " + rgraph.size + " nodes")
+        if(config.verbose) println(timeStamp + "--Found repeat graph of at least " + rgraph.size + " nodes")
         /**
           * Method to find connected components in the repetative regions graph using breadth-first search traversal
           * @param nodes

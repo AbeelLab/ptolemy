@@ -28,10 +28,12 @@ object Ptolemy {
       args(0) match {
         case "extract"             => build_db.Extract.main(args.drop(1))
         case "syntenic-anchors"    => syntenic_anchors.SyntenicAnchors.main(args.drop(1))
+        case "syntenic-anchorsc"    => syntenic_anchors.SyntenicAnchorsC.main(args.drop(1))
         case "canonical-quiver"    => canonical_quiver.ConstuctCanonicalQuiver.main(args.drop(1))
         case "run-msa"             => msa.RunMSA.main(args.drop(1))
         case "variant-calling"     => variant_calling.StructuralVariantCaller.main(args.drop(1))
         case "parents"             => parental_perspective.CharacterizeWithParents.main(args.drop(1))
+        case "reverse-complement"  => assembly.ReverseComplement.main(args.drop(1))
         case _                     => println(help)
       }
     }
