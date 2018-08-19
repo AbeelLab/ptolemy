@@ -51,11 +51,11 @@ object GFAutils {
   trait ReadGFA {
 
     /**
-      * Get paths in a GFA file.
+      * Get the graph, the paths, and the genomes from a GFA file
       * @param gfa GFA file
-      * @return Map as ID -> Seq[Node IDs]
+      * @return
       */
-    def getGraphPathsGenomes(gfa: File): (Map[Int, Set[Int]], Map[String, Seq[Int]], Map[String, Set[String]]) = {
+    def loadGFA(gfa: File): (Map[Int, Set[Int]], Map[String, Seq[Int]], Map[String, Set[String]]) = {
       //iterate through each line and process only path or genome lines
       openFileWithIterator(gfa).foldLeft((Map[Int, Set[Int]](), Map[String, Seq[Int]](), Map[String, Set[String]]())) {
         case ((graph, paths, genomes), line) => {
@@ -87,10 +87,22 @@ object GFAutils {
     }
 
     /**
-      * Get paths in a GFA file.
+      * Function to load only the nodes in the GFA
+      * @param gfa GFA file
+      * @return List[Int]
+      */
+    def loadNodesGFA(gfa: File): List[Int] = {
+      //iterate through each line and process only segment lines
+      openFileWithIterator(gfa).foldLeft(List[Int]())((nodes, line) => {
+        if(!line.startsWith("S")) nodes else nodes.:+(parseSegmentLine(line))
+      })
+    }
+
+    /**
+      * Get only the graph and the paths in a GFA file.
       * @param gfa GFA file
       * @return Map as ID -> Seq[Node IDs]
-      */
+
     def getSequencesPaths(gfa: File): (Map[Int, String], Map[String, Seq[Int]]) = {
       //iterate through each line and process only path or genome lines
       openFileWithIterator(gfa).foldLeft((Map[Int, String](), Map[String, Seq[Int]]())) {
@@ -110,7 +122,7 @@ object GFAutils {
         }
       }
     }
-
+*/
     /**
       * Function to parse segment line
       * @return

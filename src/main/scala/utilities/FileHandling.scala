@@ -14,11 +14,21 @@ import scala.io.Source
 object FileHandling {
 
 
-  /**Method to get current time stamp*/
+  /**Function to get current time stamp*/
   def timeStamp = "(" + Calendar.getInstance().getTime() + "): "
 
-  /**Method to get name of file*/
+  /**Function to get name of file*/
   def getFileName: File => String = file => file.getName.substring(0, file.getName.lastIndexOf("."))
+
+  /**Function to get parent directory of a given file*/
+  def getParentDirectory: File => File = file => {
+    val indx = {
+      val tmp = file.getAbsolutePath.lastIndexOf("/")
+      //for when working in windows
+      if(tmp != -1) tmp else file.getAbsolutePath.lastIndexOf('\\')
+    }
+    new File(file.getAbsolutePath.substring(0, indx))
+  }
 
   /**Method to open file with Iterator*/
   def openFileWithIterator(x: File, remove_header_comment_lines: Boolean = false): Iterator[String] = {

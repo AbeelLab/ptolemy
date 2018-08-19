@@ -19,6 +19,7 @@ import java.lang.management.ManagementFactory
 import java.text.{NumberFormat, SimpleDateFormat}
 import java.time.LocalDateTime
 import java.util.{Date, Locale, TimeZone}
+import utilities.FileHandling.timeStamp
 
 object Tool extends Tool {
 
@@ -62,8 +63,8 @@ trait Tool extends LoggingTrait{
   def progress(reportFreq: Int) = {
     if (progressCounter % reportFreq == 0) {
       val interval = System.currentTimeMillis() - startTime
-      log("--Processing: " + nf0.format(progressCounter) + "\t" + new TimeInterval(interval) + "\t" + nf.format
-      (progressCounter * 1000L / (interval + .1)) + " units/s\t" + LocalDateTime.now())
+      log(timeStamp + "--Processing: " + nf0.format(progressCounter) + "\t" + new TimeInterval(interval) + "\t" + nf.format
+      (progressCounter * 1000L / (interval + .1)) + " units/s\t")
     }
     progressCounter += 1
   }

@@ -4,8 +4,7 @@ import java.io.{File, PrintWriter}
 
 import atk.FastaIterator
 import utilities.FileHandling.{tLines, timeStamp, verifyDirectory, verifyFile}
-import utilities.GFFutils
-import utilities.MinimapUtils
+import utilities.{GFFutils, MinimapUtils, NumericalUtils}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.HashMap
@@ -17,7 +16,7 @@ import scala.collection.immutable.HashMap
   *
   * Description:
   */
-object Extract extends tLines with GFFutils with MinimapUtils {
+object Extract extends tLines with GFFutils with MinimapUtils with NumericalUtils {
 
   case class Config(
                      genomesFile: File = null,
@@ -25,6 +24,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
                      singleHeader: Boolean = false,
                      repeatRadius: Int = 10,
                      showWarnings: Boolean = false,
+                     splitOverlaps: Double = 0.15,
                      verbose: Boolean = false
                    )
 
@@ -41,6 +41,9 @@ object Extract extends tLines with GFFutils with MinimapUtils {
         c.copy(repeatRadius = x)
       } text ("Remove any edge that are not within r positions away (default is 10). Used for identifying repetative" +
         " regions")
+      opt[Double]("split-overlaps") action { (x, c) =>
+        c.copy(splitOverlaps = x)
+      } text ("Split ORFs that overlap by this percentage using the smallest size of the two (default is 0.1).")
       opt[Unit]("single-header") action { (x, c) =>
         c.copy(singleHeader = true)
       } text ("Split FASTA sequence names by whitespace and use the first element as the sequence name rather than " +
@@ -60,7 +63,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
     }
   }
 
-  def extract(config: Config): Unit ={
+  def extract(config: Config): Unit = {
     //open list of genomes
     val genomes = tLines(config.genomesFile).map(getGenomesInfo(_))
     println(timeStamp + "Found " + genomes.size + " genome entries")
@@ -80,11 +83,23 @@ object Extract extends tLines with GFFutils with MinimapUtils {
     val pw_repetative_regions = new PrintWriter(config.outputDir + "/repetative_regions.txt")
     //output file for id to fasta
     val pw_id2fasta = new PrintWriter(config.outputDir + "/id2fasta.txt")
+
+    /** Method to determine whether two GFF objects overlap */
+    def isOverlap(x: GFFLine, y: GFFLine): Boolean = {
+      //compute the size of the overlap size threshold
+      val overlap_threshold = List((x.end - x.start) + 1, (y.end - y.start) + 1).min * config.splitOverlaps
+      //overlap of the two orfs reaches the threshold
+      val overlap = min(x.end, y.end) -  max(x.start, y.start)
+      //check if there is indeed an overlap size of at least the computed threshold
+      overlap >= 0 && overlap >= overlap_threshold
+    }
+
     /**
       * Method to construct database for each given genome
+      *
       * @param genome_id Starting integer to be used as global ORF ID (will be incremented
-      * @param fasta File object of FASTA assembly
-      * @param gff File object of GFF file
+      * @param fasta     File object of FASTA assembly
+      * @param gff       File object of GFF file
       * @param dir
       * @param global_orf_id
       * @return
@@ -93,7 +108,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
 
       //open GFF file
       val orfs = tLines(gff).map(toGFFLine(_)).filter(_.feature == "gene")
-      if(config.verbose) println(timeStamp + "----Found " + orfs.size + " ORFs")
+      if (config.verbose) println(timeStamp + "----Found " + orfs.size + " ORFs")
       val sequences_file = new File(dir + "/" + genome_id + ".orfs.sequences.fasta")
       //create output file to store ORF sequences
       val pw_sequences = new PrintWriter(sequences_file)
@@ -102,13 +117,14 @@ object Extract extends tLines with GFFutils with MinimapUtils {
 
       /**
         * Internal function to output information to database given a set of ORFs, the global ID, and the fasta entry
+        *
         * @return Unit
         */
       def outputToDB: (List[GFFLine], Int, atk.Record, Int) => Unit = (overlaps, id, fasta_entry, size) => {
         //get maximal ORF information
         val (generic_name, start, end) = getMaximalORF(overlaps, config.showWarnings)
-        if(end > size) {
-          if(config.showWarnings) println(timeStamp + "--WARNING: Skipping ORF with coordinates outside of sequence " +
+        if (end > size) {
+          if (config.showWarnings) println(timeStamp + "--WARNING: Skipping ORF with coordinates outside of sequence " +
             "boundary: " + (generic_name, start, end))
         }
         else {
@@ -125,13 +141,14 @@ object Extract extends tLines with GFFutils with MinimapUtils {
 
       /**
         * Method to iterate through each FASTA assembly and extract:
-        *   -All sequences (contigs/chrms) in assembly (Y hashmap)
-        *   -All ORFs in a sequence (Z hashmap)
-        *   -Assign each ORF an unique global ID
-        *   -Output ORF mapping and sequences to database
+        * -All sequences (contigs/chrms) in assembly (Y hashmap)
+        * -All ORFs in a sequence (Z hashmap)
+        * -Assign each ORF an unique global ID
+        * -Output ORF mapping and sequences to database
+        *
         * @param orf_id Integer to to start with for global ID
-        * @param Y Hashmap of genome -> sequences
-        * @param Z Hashmap of sequence -> ORFS (ordered)
+        * @param Y      Hashmap of genome -> sequences
+        * @param Z      Hashmap of sequence -> ORFS (ordered)
         * @return (New starting ID as INT, Y, Z)
         */
       def parseORFs(orf_id: Int,
@@ -144,17 +161,17 @@ object Extract extends tLines with GFFutils with MinimapUtils {
           val entry_size = current_entry.getSequence.size
           //get id
           val entry_id = {
-            if(config.singleHeader) current_entry.getDescription.substring(1).split("\\s+").head
+            if (config.singleHeader) current_entry.getDescription.substring(1).split("\\s+").head
             else current_entry.getDescription.substring(1)
           }
           val entry_id_and_genome_id = genome_id + "_" + entry_id
           //find corresponding ORFs in sequence
           val corresponding_orfs = orfs.filter(x => x.chrm == entry_id)
-          if(config.verbose) println(timeStamp + "------Found " + corresponding_orfs.size + " ORFs in " + entry_id +
+          if (config.verbose) println(timeStamp + "------Found " + corresponding_orfs.size + " ORFs in " + entry_id +
             "\n------Adding:")
           //iterate through each orf and output to database
-          val (updated_Z, last_orf_ID, last_overlaps) = corresponding_orfs.foldLeft((Z, orf_id, List[GFFLine]())){
-            case((local_Z,local_orf_id,overlaps), current_orf) => {
+          val (updated_Z, last_orf_ID, last_overlaps) = corresponding_orfs.foldLeft((Z, orf_id, List[GFFLine]())) {
+            case ((local_Z, local_orf_id, overlaps), current_orf) => {
               //handle case of first iteration and cases of overlapping ORFs
               if (overlaps.isEmpty || overlaps.exists(isOverlap(_, current_orf)))
                 (local_Z, local_orf_id, current_orf :: overlaps)
@@ -179,8 +196,8 @@ object Extract extends tLines with GFFutils with MinimapUtils {
             Y + (genome_id -> current.:+(entry_id_and_genome_id))
           }
           //no overlapping orfs at the end of a sequence
-          if(last_overlaps.isEmpty) {
-            if(config.verbose)println
+          if (last_overlaps.isEmpty) {
+            if (config.verbose) println
             parseORFs(last_orf_ID, updated_Y, updated_Z)
           }
           //one last set of overlapping orfs at end of sequence
@@ -189,51 +206,58 @@ object Extract extends tLines with GFFutils with MinimapUtils {
             outputToDB(last_overlaps, last_orf_ID, current_entry, entry_size)
             //get current sequence of ORFs
             val current = updated_Z.getOrElse(entry_id_and_genome_id, Seq[Int]())
-            if(config.verbose)println
+            if (config.verbose) println
             //update
-            parseORFs(last_orf_ID+1, updated_Y, updated_Z + (entry_id_and_genome_id -> current.:+(last_orf_ID)))
+            parseORFs(last_orf_ID + 1, updated_Y, updated_Z + (entry_id_and_genome_id -> current.:+(last_orf_ID)))
           }
         }
       }
+
       val (new_id, y_hashmap, z_hashmap) = parseORFs(global_orf_id, HashMap(), HashMap())
       //create hashmap of orf -> sequence id
-      val z_hashmap_prime = z_hashmap.foldLeft(HashMap[Int,String]())((h,s) =>
-        s._2.foldLeft(h)((local_h,o) => local_h + (o -> s._1)))
+      val z_hashmap_prime = z_hashmap.foldLeft(HashMap[Int, String]())((h, s) =>
+        s._2.foldLeft(h)((local_h, o) => local_h + (o -> s._1)))
       //update global Y and Y'
-      y_hashmap.foreach{case(genome, sequences) => {
+      y_hashmap.foreach { case (genome, sequences) => {
         pw_Y.println(Seq(genome, sequences.mkString(",")).mkString("\t"))
         sequences.foreach(sequence => pw_Y_prime.println(Seq(sequence, genome).mkString("\t")))
         sequences.foreach(sequence => pw_Y_prime.println(Seq(sequence, genome).mkString("\t")))
-      }}
+      }
+      }
       //update global Z and Z'
-      z_hashmap.foreach{case(sequence, orfs) => {
+      z_hashmap.foreach { case (sequence, orfs) => {
         pw_Z.println(Seq(sequence, orfs.mkString(",")).mkString("\t"))
         orfs.foreach(orf => pw_Z_prime.println(Seq(orf, sequence).mkString("\t")))
-      }}
+      }
+      }
       pw_sequences.close
       //get repetative region start,end node positions
       val repetative_regions = {
         //run minimap with default parameters and no self alignments turned on
         val rgraph = collectBestAlignments(sequences_file, sequences_file, 0.75, 11, 5, HashMap[Int, Set[Int]](), true)
           //map,reduce approach to obtain repetative regions
-              .map{case(node,edges) =>{
-                //gets seq ID for node
-                val node_seq = z_hashmap_prime(node)
-                val dist: Int => Int = e => Math.abs(e - node)
-                //remove any edge whose node is not in the same sequence and within specified repeat radius
-                (node, edges.filter(edge => z_hashmap_prime(edge) == node_seq && dist(edge) > 0 &&
-                  dist(edge) <= config.repeatRadius))
-              }}.filter(!_._2.isEmpty)
-                //construct undirected version of graphs
-                .foldLeft(HashMap[Int,Set[Int]]()){case (g, (node,edges)) => {
-                  edges.foldLeft(g)((local_g, edge) => {
-                    val current_edge = local_g.getOrElse(edge, Set[Int]())
-                    local_g + (edge -> (current_edge + node))
-                  }) + (node -> edges)
-                }}
-        if(config.verbose) println(timeStamp + "--Found repeat graph of at least " + rgraph.size + " nodes")
+          .map { case (node, edges) => {
+          //gets seq ID for node
+          val node_seq = z_hashmap_prime(node)
+          val dist: Int => Int = e => Math.abs(e - node)
+          //remove any edge whose node is not in the same sequence and within specified repeat radius
+          (node, edges.filter(edge => z_hashmap_prime(edge) == node_seq && dist(edge) > 0 &&
+            dist(edge) <= config.repeatRadius))
+        }
+        }.filter(!_._2.isEmpty)
+          //construct undirected version of graphs
+          .foldLeft(HashMap[Int, Set[Int]]()) { case (g, (node, edges)) => {
+          edges.foldLeft(g)((local_g, edge) => {
+            val current_edge = local_g.getOrElse(edge, Set[Int]())
+            local_g + (edge -> (current_edge + node))
+          }) + (node -> edges)
+        }
+        }
+        if (config.verbose) println(timeStamp + "--Found repeat graph of at least " + rgraph.size + " nodes")
+
         /**
           * Method to find connected components in the repetative regions graph using breadth-first search traversal
+          *
           * @param nodes
           * @param ccs
           * @return
@@ -241,7 +265,8 @@ object Extract extends tLines with GFFutils with MinimapUtils {
         def getRepeatRegionsCC(nodes: Set[Int], ccs: List[Set[Int]]): List[Set[Int]] = {
           /**
             * BFS traversal
-            * @param toVisit Nodes to visit, in-order
+            *
+            * @param toVisit      Nodes to visit, in-order
             * @param localVisited Nodes visited in the current traversal
             * @return
             */
@@ -256,7 +281,8 @@ object Extract extends tLines with GFFutils with MinimapUtils {
               }
             }
           }
-          if(nodes.isEmpty) ccs
+
+          if (nodes.isEmpty) ccs
           else {
             //get connected component for current node
             val cc = breadthFirstSearch(Seq(nodes.head), Set())
@@ -265,26 +291,28 @@ object Extract extends tLines with GFFutils with MinimapUtils {
           }
         }
         //get repeat regions CCs in the repeat graph, then summarize each CC as (min,max) node
-        getRepeatRegionsCC(rgraph.flatMap(x => x._2 +(x._1)).toSet, List()).map(_.toSeq.sortBy(identity))
+        getRepeatRegionsCC(rgraph.flatMap(x => x._2 + (x._1)).toSet, List()).map(_.toSeq.sortBy(identity))
       }
 
       /**
         * Function to determine whether two repeat region graphs overlap
+        *
         * @return Boolean
         */
-      def rangeOverlap: ((Int,Int), (Int,Int)) => Boolean = (r,q) => r._1 <= q._2 && r._2 >= q._1
+      def rangeOverlap: ((Int, Int), (Int, Int)) => Boolean = (r, q) => r._1 <= q._2 && r._2 >= q._1
 
       /**
         * Tail-recursive method to merge repeat regions that overlap in terms of node location
+        *
         * @param regions
         * @param merged
         * @return
         */
-      def mergeRepeatRegions(regions: List[(Int,Int)], merged: List[(Int,Int)]): List[(Int,Int)] = {
+      def mergeRepeatRegions(regions: List[(Int, Int)], merged: List[(Int, Int)]): List[(Int, Int)] = {
         regions match {
           case Nil => merged
           case head :: tail => {
-            val overlaps = head :: tail.filter(g => rangeOverlap(head,g))
+            val overlaps = head :: tail.filter(g => rangeOverlap(head, g))
             val maximal_region = (overlaps.map(_._1).min, overlaps.map(_._2).max)
             mergeRepeatRegions(tail.filterNot(x => overlaps.contains(x)), maximal_region :: merged)
           }
@@ -295,45 +323,54 @@ object Extract extends tLines with GFFutils with MinimapUtils {
       repetative_regions.foreach(x => pw_repetative_regions.println(x.mkString(",")))
       new_id
     }
+
     println(timeStamp + "Constructing database: ")
     //iterate through each assembly and construct database
-    genomes.foldLeft(0){ case (id,genome) => {
+    genomes.foldLeft(0) { case (id, genome) => {
       println(timeStamp + "--" + genome._1)
       constructDataBase(genome._1, genome._2, genome._3, config.outputDir, id)
-    }}
+    }
+    }
     //close output files
     List(pw_Y, pw_Y_prime, pw_Z, pw_Z_prime, pw_id_mapping, pw_repetative_regions, pw_id2fasta).foreach(_.close())
     println(timeStamp + "Successfully completed!")
   }
 
 
-
-  def getMaximalORF: (List[GFFLine], Boolean) => (String,Int,Int) = (gffs, warning) => {
-    val largest = gffs.maxBy(x => (x.end - x.start)+1)
-    if(gffs.size > 1 && warning) {
-      println(timeStamp + "----WARNING: overlapping ORFs detected. Using the following maximal start,end positions: " +
-        (largest.start,largest.end))
-    }
-    (makeGenericORFname(largest), largest.start, largest.end)
+  /**
+    * Function to determine features of an ORF. If it's a single orf, use as is. If not, there are overlapping ORFs
+    * so artificially create an ORF with the max boundaries (smallest start, largest end)
+    *
+    * @return
+    */
+  def getMaximalORF: (List[GFFLine], Boolean) => (String, Int, Int) = (gffs, warning) => {
+    if (gffs.size > 1) {
+      //get left and right-most coordinates
+      val min_start = gffs.map(_.start).min
+      val max_end = gffs.map(_.end).max
+      //log message
+      if (warning) println(timeStamp + "----WARNING: overlapping ORFs detected. Using the following maximal start,end positions: " +
+        (min_start, max_end))
+      (makeGenericORFname(gffs.minBy(_.start)), min_start, max_end)
+    } else (makeGenericORFname(gffs.head), gffs.head.start, gffs.head.end)
   }
 
   /**
     * Function to create a generic name for a GFF line
+    *
     * @return String concatenation of (chrm,name,start position)
     */
   def makeGenericORFname: GFFLine => String = gff => {
-   if(gff.name == None) Seq(gff.chrm, gff.start).mkString("_")
-   else Seq(gff.chrm, gff.name.get, gff.start, (gff.end-gff.start)+1).mkString("_")
+    if (gff.name == None) Seq(gff.chrm, gff.start).mkString("_")
+    else Seq(gff.chrm, gff.name.get, gff.start, (gff.end - gff.start) + 1).mkString("_")
   }
-
-  /**Method to determine whether two GFF objects overlap*/
-  def isOverlap(x: GFFLine, y: GFFLine): Boolean = x.start <= y.end && x.end >= y.start
 
   /**
     * Function to parse genomes file
+    *
     * @return Tuple of (Genome ID, FASTA assembly path, GFF file path)
     */
-  def getGenomesInfo: String => (String,File,File) = line => {
+  def getGenomesInfo: String => (String, File, File) = line => {
     val tmp = line.split("\t")
     assume(tmp.size >= 3, "Unexpected number of entries provided for the following line: " + line)
     (tmp.head, new File(tmp(1)), new File(tmp(2)))
@@ -341,6 +378,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
 
   /**
     * Function to verify that the assemblies and gff files are valid paths
+    *
     * @return None (unit)
     */
   def verifyCorrectGenomeEntries: (String, File, File) => Unit = (genome_id, assembly, gff) => {
@@ -351,6 +389,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
 
   /**
     * Function to verify that a collection of any type is unique
+    *
     * @return Boolean
     */
   def isUnique: Iterable[Any] => Unit = collection =>

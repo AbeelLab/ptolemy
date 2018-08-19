@@ -9,10 +9,9 @@ package assembly
   */
 
 import java.io.{File, PrintWriter}
-
-import syntenic_anchors.SyntenicAnchorsC.syntenicAnchorsC
 import utilities.FileHandling._
-import utilities.{GFFutils, MinimapUtils, ORFalignments}
+import utilities.SequenceUtils
+
 
 object ReverseComplement {
 
@@ -123,7 +122,6 @@ object ReverseComplement {
 
   /**
     * IUPAC-supported reverse complement function
-    *
     * @return Char
     */
   def reverseComplement: Char => Char = nt => {
@@ -164,6 +162,5 @@ object ReverseComplement {
       }
     }
   }
-
 
 }

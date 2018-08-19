@@ -176,8 +176,9 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
     val pw_orfids = new PrintWriter(config.database + "/orf2node_id.txt")
     openFileWithIterator(path_orfids).foreach(line => {
       val split = line.split("\t")
-      val node_id = getNodeID(split(2).toInt)
-      pw_orfids.println(Seq(split(0), split(1), node_id).mkString("\t"))
+      val orf_id = split(2).toInt
+      val node_id = getNodeID(orf_id)
+      pw_orfids.println(Seq(split(0), split(1), orf_id, node_id).mkString("\t"))
     })
     pw_orfids.close
     println(timeStamp + "Successfully completed!")

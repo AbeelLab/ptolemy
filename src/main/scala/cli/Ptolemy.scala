@@ -1,5 +1,7 @@
 package cli
 
+import alignment.BuildIndex
+
 /**
   * Author: Alex N. Salazar
   * Created on 13-12-2017
@@ -18,6 +20,9 @@ object Ptolemy {
         "canonical-quiver             Construct canonical quiver.\n\n" +
         "STRUCTURAL VARIANT CALLING\n" +
         "variant-calling              Identify structural variants as a population using maximally-labelled paths\n\n"+
+        "LONG-READ ALIGNMENT\n" +
+        "index-graph                  Index canonical quiver for long-read alignments.\n" +
+        "align-reads                  Index canonical quiver for long-read alignments.\n\n" +
         "OPTIONAL\n" +
         "run-msa                      Induce MSA across syntenic anchors.\n"
       )
@@ -34,6 +39,8 @@ object Ptolemy {
         case "variant-calling"     => variant_calling.StructuralVariantCaller.main(args.drop(1))
         case "parents"             => parental_perspective.CharacterizeWithParents.main(args.drop(1))
         case "reverse-complement"  => assembly.ReverseComplement.main(args.drop(1))
+        case "index-graph"         => alignment.BuildIndex.main(args.drop(1))
+        case "align-reads"         => alignment.AlignReads.main(args.drop(1))
         case _                     => println(help)
       }
     }
