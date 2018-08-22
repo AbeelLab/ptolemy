@@ -28,11 +28,11 @@ trait NumericalUtils {
   def abs: Int => Int = x => if (x > 0) x else x * -1
 
   /**
-    * Function to compute the median value given a list of ints
+    * Function to compute the median value and it's index given a list of ints
     *
     * @return Double (median)
     */
-  def computeMedian: Iterable[Int] => Int = values => {
+  def computeMedianIndex: Iterable[Int] => (Int,Int) = values => {
     def getMedian: Int => Int = midpoint => {
       val sorted = values.toSeq
       //check whether its an odd or even list
@@ -47,10 +47,10 @@ trait NumericalUtils {
       }
     }
     //get mid point index
-    val mid_index = (values.size / 2.0) - 1
+    val mid_index = ((values.size / 2.0) - 1).toInt
     //get median value
-    val median = getMedian(mid_index.toInt)
-    median
+    val median = getMedian(mid_index)
+    (median, mid_index)
   }
 
 

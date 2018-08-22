@@ -10,12 +10,12 @@ Executable jar files are available under [releases](https://github.com/AbeelLab/
 
 # Running Ptolemy
 
-Ptolemy requires a tab-delimited file containing unique sample identifier, path to assembly, and path to gene annotations. For example:
+Ptolemy requires a tab-delimited file containing unique sample identifier, path to misc.assembly, and path to gene annotations. For example:
 
 ```
-Genome1 path/to/assembly/genome1.fa path/to/annotations/genome1.gff
-Genome2 path/to/assembly/genome2.fa path/to/annotations/genome2.gff
-Genome3 path/to/assembly/genome3.fa path/to/annotations/genome3.gff
+Genome1 path/to/misc.assembly/genome1.fa path/to/annotations/genome1.gff
+Genome2 path/to/misc.assembly/genome2.fa path/to/annotations/genome2.gff
+Genome3 path/to/misc.assembly/genome3.fa path/to/annotations/genome3.gff
 ```
 
 There are then three main steps in Ptolemy:

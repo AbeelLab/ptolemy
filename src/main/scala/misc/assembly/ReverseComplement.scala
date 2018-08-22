@@ -1,4 +1,4 @@
-package assembly
+package misc.assembly
 
 /**
   * Author: Alex N. Salazar
@@ -9,8 +9,8 @@ package assembly
   */
 
 import java.io.{File, PrintWriter}
+
 import utilities.FileHandling._
-import utilities.SequenceUtils
 
 
 object ReverseComplement {
@@ -23,9 +23,9 @@ object ReverseComplement {
 
   def main(args: Array[String]) {
     val parser = new scopt.OptionParser[Config]("syntenic-anchors") {
-      opt[File]('a', "assembly") required() action { (x, c) =>
+      opt[File]('a', "misc") required() action { (x, c) =>
         c.copy(fasta = x)
-      } text ("Path to assembly is FASTA format.")
+      } text ("Path to misc.assembly is FASTA format.")
       opt[File]('o', "output-directory") required() action { (x, c) =>
         c.copy(outputDir = x)
       } text ("Output directory.")
@@ -44,12 +44,12 @@ object ReverseComplement {
   }
 
   def makeReverseComplement(config: Config): Unit = {
-    println(timeStamp + "Creating reverse complement of assembly")
+    println(timeStamp + "Creating reverse complement of misc.assembly")
     //create output file
     val pw = new PrintWriter(config.outputDir + "/" +
       config.fasta.getName.substring(0, config.fasta.getName.lastIndexOf(".")) + ".reverse_complement.fasta")
     val empty: Option[(String, String)] = None
-    //iterate through fasta file construct map of assembly size and output reverse complements
+    //iterate through fasta file construct map of misc.assembly size and output reverse complements
     val assembly_size = {
       val tmp = openFileWithIterator(config.fasta).foldLeft((Map[String, Int](), empty)) {
         case ((assembly_size, acc), line) => {
@@ -58,7 +58,7 @@ object ReverseComplement {
             assert(line.startsWith(">"), "Expected start of FASTA entry: " + line)
             //output line
             pw.println(line)
-            //return map, add fasta entry and add assembly size
+            //return map, add fasta entry and add misc.assembly size
             (assembly_size, Some(line.substring(1).split("\\s+").head, ""))
           }
           //start of new fasta entry
@@ -67,7 +67,7 @@ object ReverseComplement {
             acc.get._2.reverseIterator.foreach(nt => pw.print(reverseComplement(nt)))
             pw.println
             pw.println(line)
-            //add assembly size of previous entry, start new acc
+            //add misc.assembly size of previous entry, start new acc
             (assembly_size + (acc.get._1 -> acc.get._2.size), Some(line.substring(1).split("\\s+").head, ""))
           }
           //sequence line from continuing fasta entry, append line to sequence

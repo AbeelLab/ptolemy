@@ -98,7 +98,7 @@ object Extract extends tLines with GFFutils with MinimapUtils with NumericalUtil
       * Method to construct database for each given genome
       *
       * @param genome_id Starting integer to be used as global ORF ID (will be incremented
-      * @param fasta     File object of FASTA assembly
+      * @param fasta     File object of FASTA misc.assembly
       * @param gff       File object of GFF file
       * @param dir
       * @param global_orf_id
@@ -112,7 +112,7 @@ object Extract extends tLines with GFFutils with MinimapUtils with NumericalUtil
       val sequences_file = new File(dir + "/" + genome_id + ".orfs.sequences.fasta")
       //create output file to store ORF sequences
       val pw_sequences = new PrintWriter(sequences_file)
-      //open fasta assembly
+      //open fasta misc.assembly
       val assembly = new FastaIterator(fasta)
 
       /**
@@ -140,8 +140,8 @@ object Extract extends tLines with GFFutils with MinimapUtils with NumericalUtil
       }
 
       /**
-        * Method to iterate through each FASTA assembly and extract:
-        * -All sequences (contigs/chrms) in assembly (Y hashmap)
+        * Method to iterate through each FASTA misc.assembly and extract:
+        * -All sequences (contigs/chrms) in misc.assembly (Y hashmap)
         * -All ORFs in a sequence (Z hashmap)
         * -Assign each ORF an unique global ID
         * -Output ORF mapping and sequences to database
@@ -168,7 +168,7 @@ object Extract extends tLines with GFFutils with MinimapUtils with NumericalUtil
           //find corresponding ORFs in sequence
           val corresponding_orfs = orfs.filter(x => x.chrm == entry_id)
           if (config.verbose) println(timeStamp + "------Found " + corresponding_orfs.size + " ORFs in " + entry_id +
-            "\n------Adding:")
+            "\n" + timeStamp + "------Adding:")
           //iterate through each orf and output to database
           val (updated_Z, last_orf_ID, last_overlaps) = corresponding_orfs.foldLeft((Z, orf_id, List[GFFLine]())) {
             case ((local_Z, local_orf_id, overlaps), current_orf) => {
@@ -325,7 +325,7 @@ object Extract extends tLines with GFFutils with MinimapUtils with NumericalUtil
     }
 
     println(timeStamp + "Constructing database: ")
-    //iterate through each assembly and construct database
+    //iterate through each misc.assembly and construct database
     genomes.foldLeft(0) { case (id, genome) => {
       println(timeStamp + "--" + genome._1)
       constructDataBase(genome._1, genome._2, genome._3, config.outputDir, id)
@@ -351,8 +351,8 @@ object Extract extends tLines with GFFutils with MinimapUtils with NumericalUtil
       //log message
       if (warning) println(timeStamp + "----WARNING: overlapping ORFs detected. Using the following maximal start,end positions: " +
         (min_start, max_end))
-      (makeGenericORFname(gffs.minBy(_.start)), min_start, max_end)
-    } else (makeGenericORFname(gffs.head), gffs.head.start, gffs.head.end)
+      (makeGenericORFname(Option((max_end - min_start) + 1))(gffs.minBy(_.start)), min_start, max_end)
+    } else (makeGenericORFname(None)(gffs.head), gffs.head.start, gffs.head.end)
   }
 
   /**
@@ -360,15 +360,15 @@ object Extract extends tLines with GFFutils with MinimapUtils with NumericalUtil
     *
     * @return String concatenation of (chrm,name,start position)
     */
-  def makeGenericORFname: GFFLine => String = gff => {
+  def makeGenericORFname(size: Option[Int]): GFFLine => String = gff => {
     if (gff.name == None) Seq(gff.chrm, gff.start).mkString("_")
-    else Seq(gff.chrm, gff.name.get, gff.start, (gff.end - gff.start) + 1).mkString("_")
+    else Seq(gff.chrm, gff.name.get, gff.start, if(!size.isEmpty) size.get else (gff.end - gff.start) + 1).mkString("_")
   }
 
   /**
     * Function to parse genomes file
     *
-    * @return Tuple of (Genome ID, FASTA assembly path, GFF file path)
+    * @return Tuple of (Genome ID, FASTA misc.assembly path, GFF file path)
     */
   def getGenomesInfo: String => (String, File, File) = line => {
     val tmp = line.split("\t")
@@ -382,7 +382,7 @@ object Extract extends tLines with GFFutils with MinimapUtils with NumericalUtil
     * @return None (unit)
     */
   def verifyCorrectGenomeEntries: (String, File, File) => Unit = (genome_id, assembly, gff) => {
-    assume(assembly.exists() && assembly.isFile, "Invalid assembly file for " + genome_id + ": " + assembly
+    assume(assembly.exists() && assembly.isFile, "Invalid misc.assembly file for " + genome_id + ": " + assembly
       .getAbsolutePath)
     assume(gff.exists() && gff.isFile, "Invalid GFF file for " + genome_id + ": " + assembly.getAbsolutePath)
   }

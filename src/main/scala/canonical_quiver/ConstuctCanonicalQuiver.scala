@@ -41,7 +41,7 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
       opt[Unit]("circular") action { (x, c) =>
         c.copy(isCircular = true)
       } text ("Genome can be circular (default is false).")
-      opt[Unit]("msa-groups") action { (x, c) =>
+      opt[Unit]("misc.msa-groups") action { (x, c) =>
         c.copy(msa = true)
       } text ("Turn on to output file of syntenic anchors to database for inducing MSA in each syntenic anchor.")
       opt[Unit]("dump") action { (x, c) =>

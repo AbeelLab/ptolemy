@@ -51,9 +51,9 @@ object GFAutils {
   trait ReadGFA {
 
     /**
-      * Get the graph, the paths, and the genomes from a GFA file
+      * Get the graph, the paths, and the genomes from a GFA file.
       * @param gfa GFA file
-      * @return
+      * @return Graph as Map[Int, Set[Int]], Paths as Map[String, Seq[Int]], and genomes as Map[String, Set[String]]
       */
     def loadGFA(gfa: File): (Map[Int, Set[Int]], Map[String, Seq[Int]], Map[String, Set[String]]) = {
       //iterate through each line and process only path or genome lines
@@ -99,6 +99,15 @@ object GFAutils {
     }
 
     /**
+      * Function to parse path alignment line. Returns 2-tuple of (read ID, ORFs in order of the read)
+      * @return (String, IndexedSeq[Int])
+      */
+    def parseAlignment: String => (String, IndexedSeq[Int]) = line => {
+      val split = line.split("\t")
+      (split(1), if (split.size == 2) IndexedSeq[Int]() else split(2).split(",").map(_.filter(_.isDigit).toInt).toIndexedSeq)
+    }
+
+    /**
       * Get only the graph and the paths in a GFA file.
       * @param gfa GFA file
       * @return Map as ID -> Seq[Node IDs]
@@ -124,8 +133,8 @@ object GFAutils {
     }
 */
     /**
-      * Function to parse segment line
-      * @return
+      * Function to parse segment line and return node
+      * @return Int
       */
     def parseSegmentLine: String => Int = line => line.split("\t")(1).toInt
 
@@ -135,8 +144,8 @@ object GFAutils {
     }
 
     /**
-      * Function to parse link line
-      * @return
+      * Function to parse link line and return edge as 2-tuple (node, node)
+      * @return (Int,Int)
       */
     def parseLinkLine: String => (Int, Int) = line => {
       val split = line.split("\t")

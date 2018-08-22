@@ -27,7 +27,7 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
                      dump: Boolean = false,
                      syntenicFraction: Double = 0.5,
                      kmerSize: Int = 11,
-                     minimizerWindow: Int = 5,
+                     minimizerWindow: Int = 3,
                      isCircular: Boolean = false,
                      mergeSingleBRH: Boolean = false,
                      brh: File = null
@@ -66,7 +66,7 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
       } text ("Kmer sizer used during alignment (default is 11).")
       opt[Int]("minimizer-window") action { (x, c) =>
         c.copy(minimizerWindow = x)
-      } text ("Minimizer window size (default is 5).")
+      } text ("Minimizer window size (default is 3).")
       opt[Unit]("dump") action { (x, c) =>
         c.copy(dump = true)
       } text ("Will write intermediate tables to disk (turned off by default).")

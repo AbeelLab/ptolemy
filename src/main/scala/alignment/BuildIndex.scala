@@ -12,11 +12,13 @@ package alignment
 import java.io.{File, PrintWriter}
 
 import atk.FastaIterator
-import utilities.FileHandling.{openFileWithIterator, timeStamp, verifyDirectory, verifyFile, getFileName, getParentDirectory}
+import utilities.FileHandling.{timeStamp, verifyDirectory, verifyFile, getFileName, getParentDirectory}
 import utilities.GFAutils.ReadGFA
-import utilities.SequenceUtils
+import utilities.DatabaseUtils.PtolemyDB
+import utilities.MinimizerUtils.MMethods
+import utilities.SequenceUtils.encode
 
-object BuildIndex extends ReadGFA with SequenceUtils {
+object BuildIndex extends ReadGFA with PtolemyDB with MMethods{
 
   case class Config(
                      canonicalQuiver: File = null,
@@ -31,10 +33,10 @@ object BuildIndex extends ReadGFA with SequenceUtils {
     val parser = new scopt.OptionParser[Config]("build-index") {
       opt[File]('c', "canonical-quiver") required() action { (x, c) =>
         c.copy(canonicalQuiver = x)
-      } text ("Output directory for database to be stored.")
+      } text ("Path to canonical quiver in GFA-format.")
       opt[File]("db") required() action { (x, c) =>
         c.copy(db = x)
-      } text ("Output directory for database to be stored.")
+      } text ("Directory path of database (e.g. output directory of 'extract' module).")
       note("\nOPTIONAL\n")
       opt[Int]('k', "kmer-size") action { (x, c) =>
         c.copy(kmerSize = x)
@@ -64,26 +66,9 @@ object BuildIndex extends ReadGFA with SequenceUtils {
     println(timeStamp + "Found " + gfa_nodes.size + " nodes in the canonical quiver")
     println(timeStamp + "Loading ORF ID to node ID schema")
     //create map from orf ID to node IDs
-    val orfid2nodeid = {
-      //fetch file containing mapping of orf id to node id
-      val file = config.db.listFiles().find(_.getName == "orf2node_id.txt")
-      //sanity check
-      assert(file != None, "Could not find file mapping orf ID to node ID.")
-      //iterate through file and create map
-      val _orfid2nodeid = openFileWithIterator(file.get).foldLeft(Map[Int, Int]())((map, line) => {
-        val split = line.split("\t")
-        //get IDs
-        val (orf, node) = (split(2).toInt, split(3).toInt)
-        //sanity check
-        assert(map.get(orf) == None, "ORF ID " + orf + " appears multiple times at line " + line)
-        map + (orf -> node)
-      })
-      //get all found node IDs
-      val found_nodeids = _orfid2nodeid.map(_._2).toSet
-      //sanity check
-      gfa_nodes.foreach(x => assert(found_nodeids.contains(x), "Could not find mapping for " + x))
-      _orfid2nodeid
-    }
+    val orfid2nodeid = loadORFid2Nodeid(config.db)
+    //sanity check
+    gfa_nodes.foreach(x => assert(!orfid2nodeid.get(x).isEmpty, "Could not find mapping for " + x))
 
     /**
       * Method create a minimizer hashtable and node info hashtable given fasta file and empty/existing hashtables.
@@ -94,7 +79,7 @@ object BuildIndex extends ReadGFA with SequenceUtils {
       * @param fasta_file File object of fasta file
       * @param kmer_index Empty or existing hashtable
       * @param nodeinfo_map Empty or existing hashtable
-      * @return (Map[Int, Map[Int, Set[(Int,Int)]]], Map[Int, Map[Int, (Int,Int)]])
+      * @return (Map[Int, Map[Int, Set[(Int,Int)], Map[Int, Map[Int, (Int,Int)])
       **/
     def fetchMinimizers(fasta_file: File,
                         kmer_index: Map[Int, Map[Int, Set[(Int,Int)]]],
@@ -106,7 +91,7 @@ object BuildIndex extends ReadGFA with SequenceUtils {
         * Tail-recusive method to iterate through fasta entries and update hashtable
         *
         * @param _kmer_index Hashtable to update
-        * @return Map[Int, Map[Int,Int]]
+        * @return Map[Int, Map[Int,Int]
         **/
       def _fetchMinimizers(_kmer_index: Map[Int, Map[Int, Set[(Int,Int)]]],
                           _nodeinfo_map: Map[Int, Map[Int, (Int,Int)]]
