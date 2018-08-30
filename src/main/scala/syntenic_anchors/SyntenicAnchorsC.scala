@@ -3,10 +3,12 @@ package syntenic_anchors
 import java.io.{File, PrintWriter}
 
 import utilities.FileHandling._
-import utilities.{GFFutils, MinimapUtils, ORFalignments}
-
-import scala.annotation.tailrec
+import utilities.NumericalUtils.min
+import utilities.{GFFutils, MinimapUtils}
+import utilities.GraphUtils.getConnectedComponents
+import atk.Tool.progress
 import scala.collection.immutable.HashMap
+import scala.collection.parallel.ForkJoinTaskSupport
 
 
 /**
@@ -16,7 +18,7 @@ import scala.collection.immutable.HashMap
   *
   * Description:
   */
-object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
+object SyntenicAnchorsC extends GFFutils with MinimapUtils {
 
   case class Config(
                      database: File = null,
@@ -30,6 +32,7 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
                      minimizerWindow: Int = 3,
                      isCircular: Boolean = false,
                      mergeSingleBRH: Boolean = false,
+                     maxThreads: Int = 1,
                      brh: File = null
                    )
 
@@ -45,9 +48,6 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
       opt[Unit]("circular") action { (x, c) =>
         c.copy(isCircular = true)
       } text ("Genome can be circular (default is false).")
-      opt[Unit]("merge-single-brhs") action { (x, c) =>
-        c.copy(mergeSingleBRH = true)
-      } text ("Merge ORFs that have only one BRH per genome(default is false).")
       opt[File]("brhs") action { (x, c) =>
         c.copy(brh = x)
       } text ("If best reciprocal hits file already exists, provide it here to skip pairwise-ORF alignments.")
@@ -55,12 +55,9 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
         c.copy(flankingWindow = x)
       } text ("Flanking window (default is 10).")
       note("\nOPTIONAL: ALIGNMENT PARAMETERS\n")
-      opt[Double]("gamma") action { (x, c) =>
-        c.copy(gamma = x)
-      } text ("Gamma-value for minimum coverage of ORF alignment (default is 0.3).")
-      opt[Double]("beta") action { (x, c) =>
-        c.copy(syntenicFraction = x)
-      } text ("Maximum allowed (default is 0.5).")
+      opt[Int]('t', "threads") action { (x, c) =>
+        c.copy(maxThreads = x)
+      } text ("Maximum number of threads to use (default is 1).")
       opt[Int]("kmer-size") action { (x, c) =>
         c.copy(kmerSize = x)
       } text ("Kmer sizer used during alignment (default is 11).")
@@ -95,7 +92,7 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
     //get potential repeat expansions
     val path_repeats = database.find(_.getName == "repetative_regions.txt").get
     //create output file sof syntenic scores
-    val pw_syntenic_scores = new PrintWriter(config.outputDir + "/syntenic_scores_distribution.txt")
+    //val pw_syntenic_scores = new PrintWriter(config.outputDir + "/syntenic_scores_distribution.txt")
     //char index
     val char_alphabet = 'A' to 'z'
 
@@ -108,14 +105,16 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
     }
 
     //get fasta files of orf sequences
-    val sequences = config.database.listFiles().filter(_.getName.endsWith("fasta"))
+    val sequences = config.database.listFiles().filter(_.getName.endsWith("orfs.sequences.fasta")).par
+    //set maximum number of threads to use
+    sequences.tasksupport = new ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool(config.maxThreads))
     println(timeStamp + "Found " + sequences.size + " genomes in database")
 
     //Obtain hashmap H, brhs for a given ORF
     //  TO DO: Post-process BRHs to assure unique sequence mapping per ORF (e.g. an ORF does not have a BRF in
     //  multiple sequences
     val hashmap_H = {
-      //for when the user specified BRh file
+      //for when the user specified BRH file
       if (config.brh != null) {
         println(timeStamp + "User specified BRHs file. Constructing hashmap H from file.")
         verifyFile(config.brh)
@@ -127,12 +126,12 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
       }
       //constructh hashmap H from pairwise ORF alignments
       else {
-        println(timeStamp + "Performing " + (sequences.size * sequences.size) + " pairwise ORF-set alignments (in parallel" +
-          " if multiple cores are available): ")
+        println(timeStamp + "Performing " + (sequences.size * sequences.size) + " pairwise ORF-set alignments")
         //obtain H_prime hashmap, best alignments by iterating through them in parallel and merging at the end
         val hashmap_H_prime = {
           //iterate through sequences as query, then as ref for pairwise alignments
-          sequences.par.map(query => {
+          sequences.map(query => {
+            progress(1000)
             //collect best alignments for each query sequentially
             sequences.foldLeft(HashMap[Int, Set[Int]]())((h, ref) => {
               if (query == ref) h
@@ -156,6 +155,7 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
           pw.close
         }
         println(timeStamp + "Collected " + hashmap_H_prime.map(_._2.size).sum + " best pairwise ORF alignments")
+        println(timeStamp + "Identifying bi-directional alignments (BRHs)")
         //iterate through each query orf and retain only BRHs
         hashmap_H_prime.map { case (query_orf, best_alignments) => {
           //remove cases where there is no bi-direction best alignment (e.g. query <-> ref)
@@ -169,10 +169,6 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
         }.filterNot(x => x._2.isEmpty)
       }
     }
-
-    //get connected components of the brhs
-    val cc_brhs = getConnectedComponents(hashmap_H, List())
-
     //create brhs file if not provided
     if (config.brh == null) {
       //output file for BRHs; note currently overrides original BRH file
@@ -181,8 +177,22 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
       pw_brhs.close
       //output messages
       println(timeStamp + "Collected " + hashmap_H.map(_._2.size).sum + " BRHs")
-      println(timeStamp + "Loading hash tables Z, Z', boundaries, and positionals")
     }
+
+    println(timeStamp + "Identifying connected components from BRHs")
+    //get connected components of the brhs
+    val cc_brhs = getConnectedComponents(hashmap_H, Set(), List()).par
+    println(timeStamp + "Found " + cc_brhs.size + " connected components")
+    //set max threads to use
+    cc_brhs.tasksupport = new ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool(config.maxThreads))
+
+    if(config.dump) {
+      val pw_cc = new PrintWriter(config.outputDir + "/ccs.txt")
+      cc_brhs.foreach(cc => pw_cc.println(cc.mkString(",")))
+      pw_cc.close
+    }
+
+    println(timeStamp + "Loading hash tables Z, Z', boundaries, and positionals")
 
     //load hashmaps Z and Z'
     val (boundaries_map, hashmap_Z, hashmap_Z_positional) = {
@@ -399,6 +409,7 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
     //create output file
     val pw_syntenic_anchors = new PrintWriter(config.outputDir + "/syntenic_anchors.txt")
 
+    println(timeStamp + "Computing syntenic anchors in each connected component")
     //iterate through each connected component
     cc_brhs.foreach(cc => {
       //group by genome
@@ -480,40 +491,6 @@ object SyntenicAnchorsC extends GFFutils with ORFalignments with MinimapUtils {
       (prev zip prev.tail zip b).scanLeft(prev.head + 1) {
         case (h, ((d, v), y)) => min(min(h + 1, v + 1), d + (if (x == y) 0 else 1))
       }) last
-  }
-
-  /**
-    * Function to compute minimum of two integers
-    *
-    * @return Int
-    */
-  def min: (Int, Int) => Int = (x, y) => if (x < y) x else y
-
-  def getConnectedComponents(graph: HashMap[Int, Set[Int]], ccs: List[Set[Int]]): List[Set[Int]] = {
-    /**
-      * Tail-recursive method for constructing the complete graph given a set of ORF IDs
-      *
-      * @param queue
-      * @param acc_ccs
-      * @return
-      */
-    def _getConnectedComponents(queue: Set[Int], acc_ccs: Set[Int]): Set[Int] = {
-      if (queue.isEmpty) acc_ccs
-      else {
-        //get brhs of current orf
-        val new_brhs = graph.getOrElse(queue.head, Set[Int]())
-        //add to current complete graph and move to next
-        _getConnectedComponents(queue.tail, new_brhs.foldLeft(acc_ccs)((b, a) => b + (a)))
-      }
-    }
-
-    if (graph.isEmpty) ccs
-    else {
-      //compute the complete graph for current orf
-      val computed_complete_graph = _getConnectedComponents(graph.head._2 + graph.head._1, Set())
-      //remove all instances from the above that are still in the graph, append to group of complete graphs
-      getConnectedComponents(graph.filterNot(x => computed_complete_graph.contains(x._1)), ccs.:+(computed_complete_graph))
-    }
   }
 
 }

@@ -5,7 +5,6 @@ import java.io.{File, PrintWriter}
 import utilities.FileHandling.timeStamp
 import utilities.FileHandling.{openFileWithIterator, tLines, verifyDirectory, verifyFile}
 import utilities.GFFutils
-import utilities.ORFalignments
 import utilities.MinimapUtils
 
 import scala.collection.immutable.{HashMap, HashSet}
@@ -21,7 +20,7 @@ import scala.annotation.tailrec
   *
   * Description:
   */
-object SyntenicAnchors extends tLines with GFFutils with ORFalignments with MinimapUtils {
+object SyntenicAnchors extends tLines with GFFutils with MinimapUtils {
 
   case class Config(
                      database: File = null,

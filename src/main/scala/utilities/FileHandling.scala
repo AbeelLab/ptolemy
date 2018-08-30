@@ -1,7 +1,9 @@
 package utilities
 
-import java.io.File
+import java.io.{File, FileInputStream}
 import java.util.Calendar
+import java.util.zip.GZIPInputStream
+
 import scala.io.Source
 
 /**
@@ -35,6 +37,12 @@ object FileHandling {
     if(remove_header_comment_lines) Source.fromFile(x).getLines.dropWhile(_.startsWith("#"))
     else Source.fromFile(x).getLines
   }
+
+  /**Method to open gzipped file with Iterator*/
+  def openGZFileWithIterator(x: File): Iterator[String] = {
+    Source.fromInputStream(new GZIPInputStream(new FileInputStream(x))).getLines()
+  }
+
 
   /**Check whether directory exists and if it is valid. If it does not exist, create it.*/
   def checkOutputDirectory(inputDir: File) {

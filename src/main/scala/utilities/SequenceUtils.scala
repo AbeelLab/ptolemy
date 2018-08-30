@@ -1,9 +1,6 @@
 package utilities
 
-import utilities.FileHandling.timeStamp
-
-import scala.annotation.tailrec
-import scala.util.hashing.MurmurHash3
+import scala.collection.mutable.ArrayBuffer
 
 /**
   * Author: Alex N. Salazar
@@ -26,25 +23,79 @@ object SequenceUtils {
   private val min1_byte = (-1).toByte
 
   /**
-    * Method to map nucleotides to bytes.
+    * Function to encode a nucleotide into a byte. For standard nucleotides, returns option(byte). Any
+    * other returns none
     *
-    * @param c Nucleotide
-    * @return Byte
+    * @return Option[Byte]
     */
-  def encode(c: Char): Byte = c match {
-    case 'a' | 'A' => zero_byte
-    case 'c' | 'C' => one_byte
-    case 'g' | 'G' => two_byte
-    case 't' | 'T' => three_byte
-    case 'n' | 'N' => min1_byte
-    case _ => {
-      assert(false, "Cannot encode " + c);
-      min1_byte
+  def encode: Char => Option[Byte] = n => {
+    n match {
+      case 'a' | 'A' => Option(zero_byte)
+      case 'c' | 'C' => Option(one_byte)
+      case 'g' | 'G' => Option(two_byte)
+      case 't' | 'T' => Option(three_byte)
+      case _ => None
     }
   }
 
   /**
+    * Method to encode a given sequence into bytes. It considers IUPAC nucleotides: when encountering a
+    * non-standard nucleotide (A|T|C|G), the nucleotide is discarded and the upstream sequence is taken as the
+    * longest contiguous encoded sequence. The result is thus an array of arrays representing all longest encoding
+    * sequences. Note: it uses a non-functional and mutable approach since it internally uses array buffers.
+    *
+    * @return Array[Array[Byte]
+    */
+  def encodeSequence(seq: String): Array[(Array[Byte], Int)] = {
+    /**
+      * Initiate mutable array buffer of array buffer containing all contiguous encoded sequences along with starting
+      * positions
+      */
+    var byte_arrays = ArrayBuffer[(Array[Byte], Int)]()
+    /**
+      * Initiate mutable array buffer for accumulating contiguous encoded sequence
+      */
+    var acc = ArrayBuffer[Byte]()
+    /**
+      * Initiate starting position for the current accumulating contiguous encodeds sequence
+      */
+    var starting_position = 1
+    /**
+      * Initiate starting position for the current position at any point
+      */
+    var current_position = 1
+    //iterate through each nucleotide in the sequence and extract all longest contiguous encoded sequences
+    seq.toCharArray.foreach(nt => {
+      //attempt to encode current nucleotide
+      val encoding = encode(nt)
+      //encountered a non-standard nucleotide
+      if (encoding.isEmpty) {
+        //if acc is not empty, add the upstream sequence to the array of encoded sequences
+        if (!acc.isEmpty) {
+          byte_arrays += ((acc.toArray, starting_position))
+          //empty acc
+          acc = ArrayBuffer[Byte]()
+        }
+        //increment positions regardless
+        current_position += 1;
+        starting_position = current_position
+      }
+      //still in a contiguou sequence, add encoded nucleotide
+      else {
+        //add nucleotide
+        acc += encoding.get
+        //increment current position
+        current_position += 1
+      }
+    })
+
+    //add remaining contiguous sequence, if it exists
+    if (acc.isEmpty) byte_arrays.toArray else (byte_arrays += ((acc.toArray, starting_position))).toArray
+  }
+
+  /**
     * Method to decode an array of bytes to DNA sequence
+    *
     * @param c
     * @return
     */
@@ -55,108 +106,26 @@ object SequenceUtils {
     case `three_byte` => 'T'
     case `min1_byte` => 'N'
     case _ => {
-      assert(false, "Cannot decode " + c)
+      assert(false, "Cannot decode nucleotide " + c)
       '?'
     }
   }
 
   /**
-    * Method to obtain complement of a nt encoded as byte array
+    * Function to get the complement for a given nucleotide.
     *
-    * @param c Nucleotide encoded as a byte array
     * @return Byte
     */
-  def getComplement(c: Byte): Byte = c match {
-    case `zero_byte` => three_byte
-    case `one_byte` => two_byte
-    case `two_byte` => one_byte
-    case `three_byte` => zero_byte
-    case `min1_byte` => min1_byte
-    case _ => {
-      assert(false, "Cannot reverse complement " + c);
-      min1_byte
-    }
-  }
-
-
-  trait FastaUtils {
-
-    /**
-      * Case class for FASTA-sequence entry. Sequence is represented as a byte array
-      *
-      * @param name
-      * @param sequence
-      */
-    case class FastaEntry(name: String, sequence: Array[Byte])
-
-
-    /**
-      * Method to load set a chunk of reads up to some memory usage.
-      *
-      * @param iterator
-      * @param acc_iterator
-      * @param acc_name
-      * @param acc_sequence
-      * @return List[FastaEntry]
-      */
-    def loadFastaChunk(iterator: Iterator[String],
-                       acc_iterator: List[FastaEntry],
-                       acc_nreads: Int,
-                       minsize: Int,
-                       acc_name: Option[String],
-                       acc_sequence: StringBuilder): (List[FastaEntry], Option[String]) = {
-      //empty iterator
-      if (!iterator.hasNext) {
-        //no additional reads means reached end of file, check that there is a remaining read with sequence
-        assert(acc_name != None, "Expected FASTA-entry at end of file")
-        assert(!acc_sequence.isEmpty, "Expected corresponding sequence at end of file")
-        //add last read to iterator
-        (acc_iterator.:+(new FastaEntry(acc_name.get.substring(1), acc_sequence.toArray.map(encode(_)))), None)
-      }
-      //loaded max number of reads
-      else if (acc_nreads == 0) {
-        //check that there is a read entry in the acc
-        assert(!acc_name.isEmpty, "Expected read entry after loading max number of reads: " + iterator.next())
-        //check that the corresponding sequence is empty
-        assert(acc_sequence.isEmpty, "Expected no corresponding sequence for read entry after loading max number of " +
-          "reads: " + acc_sequence.mkString(""))
-        (acc_iterator, acc_name)
-      }
-      //keep loading reads
-      else {
-        //get the next line
-        val line = iterator.next()
-        //for when the FASTA acc entry is empty, line is expected to be a new FASTA entry (e.g. beginning of iteration)
-        if (acc_name == None) {
-          //sanity checks
-          assert(line.startsWith(">"), "Expected start of a FASTA sequence: " + line)
-          assert(acc_sequence.isEmpty, "Expected empty sequence accumulator for " + line)
-          //add as start of new FASTA entry
-          loadFastaChunk(iterator, acc_iterator, acc_nreads, minsize, Option(line), acc_sequence)
-        }
-        else {
-          //sanity check that the next line starts with entry character and sequence is empty
-          assert(acc_name.get.startsWith(">"), "Expected line to be start of a FASTA-entry: " + acc_name.get)
-          //for when there is an existing FASTA-entry and the next line is a new FASTA-entry
-          if (line.startsWith(">")) {
-            //sanity check
-            assert(acc_sequence != None, "Expected FASTA sequence for entry " + acc_name.get + ", instead" +
-              " found start of new entry: " + line)
-            //only add if fasta entry meets minimum read length
-            if (acc_sequence.length < minsize)
-              loadFastaChunk(iterator, acc_iterator, acc_nreads, minsize, Option(line), new StringBuilder)
-            else {
-              //create a new FastaEntry object
-              val fasta_entry = new FastaEntry(acc_name.get.substring(1), acc_sequence.toArray.map(encode(_)))
-              //add accordingly
-              loadFastaChunk(iterator, acc_iterator.:+(fasta_entry), acc_nreads - 1, minsize, Option(line), new StringBuilder)
-            }
-          }
-          //for when there is an existing FASTA entry and the next line is a sequence line
-          else loadFastaChunk(iterator, acc_iterator, acc_nreads, minsize, acc_name, acc_sequence.append(line))
-        }
+  def getByteComplement: Byte => Byte = b => {
+    b match {
+      case `zero_byte` => three_byte
+      case `one_byte` => two_byte
+      case `two_byte` => one_byte
+      case `three_byte` => zero_byte
+      case _ => {
+        assert(false, "Cannot obtain complement nucleotide for byte " + b);
+        min1_byte
       }
     }
   }
-
 }

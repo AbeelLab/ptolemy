@@ -11,12 +11,12 @@ package canonical_quiver
 import java.io.{File, PrintWriter}
 import java.util.Locale
 
-import utilities.{GFFutils, MinimapUtils, ORFalignments}
+import utilities.{GFFutils, MinimapUtils}
 import utilities.FileHandling.{openFileWithIterator, timeStamp, verifyDirectory, verifyFile}
 
 import scala.collection.immutable.HashMap
 
-object PtolemyMetrics extends GFFutils with ORFalignments with MinimapUtils {
+object PtolemyMetrics extends GFFutils with MinimapUtils {
 
 
   case class Config(

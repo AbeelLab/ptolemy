@@ -7,7 +7,7 @@ package utilities
   *
   * Description:
   */
-trait NumericalUtils {
+object NumericalUtils {
 
   /**
     * Compute max value given two Ints

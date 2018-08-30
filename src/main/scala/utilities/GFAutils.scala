@@ -51,100 +51,135 @@ object GFAutils {
   trait ReadGFA {
 
     /**
-      * Get the graph, the paths, and the genomes from a GFA file.
+      * Load canonical quiver from a GFA-formatted file. Constructs the canonical quiver graph, all genome paths in
+      * th graph, all genomes in the graph, and the node coverages
+      *
       * @param gfa GFA file
-      * @return Graph as Map[Int, Set[Int]], Paths as Map[String, Seq[Int]], and genomes as Map[String, Set[String]]
+      * @return Graph as Map[Int, Set[Int], Paths as Map[String, Seq[Int], genomes as Map[String, Set[String], and
+      *         node coverages as Map[Int, Int]
       */
-    def loadGFA(gfa: File): (Map[Int, Set[Int]], Map[String, Seq[Int]], Map[String, Set[String]]) = {
-      //iterate through each line and process only path or genome lines
-      openFileWithIterator(gfa).foldLeft((Map[Int, Set[Int]](), Map[String, Seq[Int]](), Map[String, Set[String]]())) {
-        case ((graph, paths, genomes), line) => {
-          if (line.startsWith("S")) {
-            val node = parseSegmentLine(line)
-            (graph + (node -> graph.getOrElse(node, Set[Int]())), paths, genomes)
+    def loadGFA(gfa: File): (Map[Int, Set[Int]], Map[String, Seq[Int]], Map[String, Set[String]], Map[Int, Int]) = {
+      //iterate through each line and construct graph, paths, and genome data structures
+      val (graph, paths, genomes) = openFileWithIterator(gfa)
+        .foldLeft((Map[Int, Set[Int]](), Map[String, Seq[Int]](), Map[String, Set[String]]())) {
+          case ((graph, paths, genomes), line) => {
+            //node line
+            if (line.startsWith("S")) {
+              //parse node
+              val node = parseSegmentLine(line)
+              //sanity check: node line should only be seen once
+              assert(graph.get(node).isEmpty, "Observed segment line for a node multiple times: " + line)
+              //update
+              (graph + (node -> Set[Int]()), paths, genomes)
+            }
+            //edge line
+            else if (line.startsWith("L")) {
+              //parse node and corresponding edge
+              val (node, edge) = parseLinkLine(line)
+              //get current edges
+              val current = graph.getOrElse(node, Set[Int]())
+              //update
+              (graph + (node -> (current + edge)), paths, genomes)
+            }
+            //genome line
+            else if (line.startsWith("G")) {
+              //split line
+              val split = line.split("\t")
+              //sanity check: genome line for current genome should be observed only once
+              assert(genomes.get(split(1)) == None, "Multiple occurrances of a genome line for a genome: " + line)
+              //update
+              (graph, paths, genomes + (split(1) -> split(2).split(",").toSet))
+            }
+            //path line
+            else if (line.startsWith("P")) {
+              //split line
+              val split = line.split("\t")
+              //assure genome has never been seen before
+              assert(paths.get(split.head) == None, "Multiple occurrances of path line for a genome: " + line)
+              //add path to map
+              (graph, paths + (split(1) -> split(2).split("""\W+""").toSeq.map(_.toInt)), genomes)
+            }
+            //some other line, skip
+            else (graph, paths, genomes)
           }
-          else if (line.startsWith("L")) {
-            val (node, edge) = parseLinkLine(line)
-            val current = graph.getOrElse(node, Set[Int]())
-            (graph + (node -> (current + edge)), paths, genomes)
-          }
-          else if (line.startsWith("G")) {
-            //split line
-            val split = line.split("\t")
-            assert(genomes.get(split(1)) == None)
-            (graph, paths, genomes + (split(1) -> split(2).split(",").toSet))
-          }
-          else if (line.startsWith("P")) {
-            //split line
-            val split = line.split("\t")
-            //assure genome has never been seen before
-            assert(paths.get(split.head) == None)
-            //add path to map
-            (graph, paths + (split(1) -> split(2).split("""\W+""").toSeq.map(_.toInt)), genomes)
-          } else (graph, paths, genomes)
         }
-      }
+      //obtain coverages of every node in the graph
+      val coverages = paths.values.foldLeft(Map[Int, Int]())((node_coverages, path) => {
+        //iterate through each path and update coverage of node
+        path.foldLeft(node_coverages)((local_coverage, node) => {
+          //get current coverage
+          val current = local_coverage.getOrElse(node, 0)
+          //increment coverage
+          local_coverage + (node -> (current + 1))
+        })
+      })
+      //return
+      (graph, paths, genomes, coverages)
     }
 
     /**
       * Function to load only the nodes in the GFA
+      *
       * @param gfa GFA file
-      * @return List[Int]
+      * @return Set[Int]
       */
-    def loadNodesGFA(gfa: File): List[Int] = {
+    def loadNodesGFA(gfa: File): Set[Int] = {
       //iterate through each line and process only segment lines
-      openFileWithIterator(gfa).foldLeft(List[Int]())((nodes, line) => {
-        if(!line.startsWith("S")) nodes else nodes.:+(parseSegmentLine(line))
+      openFileWithIterator(gfa).foldLeft(Set[Int]())((nodes, line) => {
+        if (!line.startsWith("S")) nodes else nodes + (parseSegmentLine(line))
       })
     }
 
     /**
       * Function to parse path alignment line. Returns 2-tuple of (read ID, ORFs in order of the read)
+      *
       * @return (String, IndexedSeq[Int])
       */
     def parseAlignment: String => (String, IndexedSeq[Int]) = line => {
       val split = line.split("\t")
-      (split(1), if (split.size == 2) IndexedSeq[Int]() else split(2).split(",").map(_.filter(_.isDigit).toInt).toIndexedSeq)
+      (split(1), if (split(2).isEmpty) IndexedSeq[Int]() else split(2).split("""\W+""").map(_.toInt).toIndexedSeq)
     }
 
     /**
       * Get only the graph and the paths in a GFA file.
-      * @param gfa GFA file
+      *
       * @return Map as ID -> Seq[Node IDs]
-
-    def getSequencesPaths(gfa: File): (Map[Int, String], Map[String, Seq[Int]]) = {
-      //iterate through each line and process only path or genome lines
-      openFileWithIterator(gfa).foldLeft((Map[Int, String](), Map[String, Seq[Int]]())) {
-        case ((graph, paths), line) => {
-          if (line.startsWith("S")) {
-            val (node, seq) = parseSegmentLineWithSeq(line)
-            (graph + (node -> seq), paths)
-          }
-          else if (line.startsWith("P")) {
-            //split line
-            val split = line.split("\t")
-            //assure genome has never been seen before
-            assert(paths.get(split.head) == None)
-            //add path to map
-            (graph, paths + (split(1) -> split(2).split("""\W+""").toSeq.map(_.toInt)))
-          } else (graph, paths)
-        }
-      }
-    }
-*/
+      *         *
+      *         def getSequencesPaths(gfa: File): (Map[Int, String], Map[String, Seq[Int]) = {
+      *         //iterate through each line and process only path or genome lines
+      *         openFileWithIterator(gfa).foldLeft((Map[Int, String](), Map[String, Seq[Int]())) {
+      *         case ((graph, paths), line) => {
+      *         if (line.startsWith("S")) {
+      *         val (node, seq) = parseSegmentLineWithSeq(line)
+      *         (graph + (node -> seq), paths)
+      *         }
+      *         else if (line.startsWith("P")) {
+      *         //split line
+      *         val split = line.split("\t")
+      *         //assure genome has never been seen before
+      *         assert(paths.get(split.head) == None)
+      *         //add path to map
+      *         (graph, paths + (split(1) -> split(2).split("""\W+""").toSeq.map(_.toInt)))
+      *         } else (graph, paths)
+      *         }
+      *         }
+      *         }
+      */
     /**
       * Function to parse segment line and return node
+      *
       * @return Int
       */
     def parseSegmentLine: String => Int = line => line.split("\t")(1).toInt
 
-    def parseSegmentLineWithSeq: String => (Int,String) = line => {
+    def parseSegmentLineWithSeq: String => (Int, String) = line => {
       val split = line.split("\t")
       (split(1).toInt, split(2))
     }
 
     /**
       * Function to parse link line and return edge as 2-tuple (node, node)
+      *
       * @return (Int,Int)
       */
     def parseLinkLine: String => (Int, Int) = line => {

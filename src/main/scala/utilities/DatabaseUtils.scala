@@ -14,7 +14,10 @@ import utilities.FileHandling.{openFileWithIterator}
 object DatabaseUtils extends MMethods {
 
   trait PtolemyDB {
-    //create map from orf ID to node IDs
+    /**
+      * Load file containing a map from ORF id to Node Id
+      * @return Map[Int,Int]
+      */
     def loadORFid2Nodeid: File => Map[Int,Int] = db => {
       //fetch file containing mapping of orf id to node id
       val file = db.listFiles().find(_.getName == "orf2node_id.txt")
@@ -29,8 +32,6 @@ object DatabaseUtils extends MMethods {
         assert(map.get(orf) == None, "ORF ID " + orf + " appears multiple times at line " + line)
         map + (orf -> node)
       })
-      //get all found node IDs
-      val found_nodeids = _orfid2nodeid.map(_._2).toSet
       _orfid2nodeid
     }
   }
@@ -40,11 +41,11 @@ object DatabaseUtils extends MMethods {
     */
   trait GraphIndex {
     /**
-      * Load global kmer index in the format of Map(kmer hashvalue, Set(node IDs))
+      * Load global node kmer index in the format of Map(kmer hashvalue, Set(node IDs))
       *
       * @return Map[Int, Set[Int]
       **/
-    def loadGlobalKmerIndex: File => Map[Int, Set[Int]] = file => {
+    def loadGlobalNodeKmerIndex: File => Map[Int, Set[Int]] = file => {
       //iterate through each line in the file
       openFileWithIterator(file).foldLeft(Map[Int, Set[Int]]())((kmap, line) => {
         val line_split = line.split("\t")
@@ -55,6 +56,15 @@ object DatabaseUtils extends MMethods {
         //construct kmer's node set, every entry is a node id
         kmap + (kmer -> line_split(1).split(",").foldLeft(Set[Int]())((node_set, node_id) => node_set + (node_id.toInt)))
       })
+    }
+
+    /**
+      * Load global intergenic kmer index in the format of Set[hashvalue]
+      * @return Set[Int]
+      */
+    def loadGlobalInterKmerIndex: File => Set[Int] = file => {
+      //iterate through eac line in the file
+      openFileWithIterator(file).foldLeft(Set[Int]())((kmap, line) => kmap + (line.toInt))
     }
 
     /**

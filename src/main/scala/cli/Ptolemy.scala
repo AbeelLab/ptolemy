@@ -24,7 +24,7 @@ object Ptolemy {
         "index-graph                  Index canonical quiver for long-read alignments.\n" +
         "align-reads                  Index canonical quiver for long-read alignments.\n\n" +
         "OPTIONAL\n" +
-        "run-misc.msa                      Induce MSA across syntenic anchors.\n"
+        "run-msa                      Induce MSA across syntenic anchors.\n"
       )
 
     if (args.length == 0) {

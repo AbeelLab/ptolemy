@@ -6,6 +6,7 @@ import scala.collection.immutable.HashMap
 import scala.sys.process.ProcessLogger
 import scala.sys.process._
 import utilities.FileHandling.openFileWithIterator
+import utilities.NumericalUtils.{max}
 
 /**
   * Author: Alex N. Salazar
@@ -14,7 +15,7 @@ import utilities.FileHandling.openFileWithIterator
   *
   * Description:
   */
-trait MinimapUtils extends ORFalignments{
+trait MinimapUtils{
 
   /**
     * Method to peform pariwise ORF alignments and retain best alignments
@@ -46,7 +47,18 @@ trait MinimapUtils extends ORFalignments{
       *
       * @return Boolean
       */
-    def isCovered: Array[String] => Boolean = alignment => computeGamma(alignment) >= gamma
+    def isCovered: Array[String] => Boolean = alignment => {
+      //get maximum size of two sequences
+      val max_size = max(alignment(1).toInt, alignment(6).toInt)
+      //get alignment block length
+      val block_length = alignment(10).toInt
+      //get mapping quality
+      val mapq = alignment(11).toInt
+      //get alignment coverage based on max size
+      val coverage =  block_length.toDouble / max_size
+      coverage > 0.5 && mapq > 10
+    }
+
     //command for running minimap2
     val command ={
       if(self) {
@@ -64,20 +76,21 @@ trait MinimapUtils extends ORFalignments{
     command ! logger
     //get alignments, and retain those that pass the sigma and gammas filters, add remaining to hashmap H
     val hashmap = out.toString.split("\n").foldLeft(hashmap_H) { case (map, line) => {
-      //split line
-      val alignment = line.split("\t")
-      //alignment does not meet sigma and gamma quality thresholds
-      if (!isCovered(alignment)) map
+      if (line.isEmpty) map
       else {
-        //get current values for query ORF
-        val current = map.getOrElse(alignment.head.toInt, Set[Int]())
-        //update hashmap_H
-        map + (alignment.head.toInt -> (current + alignment(5).toInt))
+        //split line
+        val alignment = line.split("\t")
+        //alignment does not meet sigma and gamma quality thresholds
+        if (!isCovered(alignment)) map
+        else {
+          //get current values for query ORF
+          val current = map.getOrElse(alignment.head.toInt, Set[Int]())
+          //update hashmap_H
+          map + (alignment.head.toInt -> (current + alignment(5).toInt))
+        }
       }
     }
     }
-    //sanity check
-    assume(!hashmap.isEmpty, "Hashmap H for " + query.getName + ", ")
     //return hashmap
     hashmap
   }

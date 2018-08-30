@@ -63,7 +63,7 @@ trait Tool extends LoggingTrait{
   def progress(reportFreq: Int) = {
     if (progressCounter % reportFreq == 0) {
       val interval = System.currentTimeMillis() - startTime
-      log(timeStamp + "--Processing: " + nf0.format(progressCounter) + "\t" + new TimeInterval(interval) + "\t" + nf.format
+      log(timeStamp + "--Processed: " + nf0.format(progressCounter) + "\t" + new TimeInterval(interval) + "\t" + nf.format
       (progressCounter * 1000L / (interval + .1)) + " units/s\t")
     }
     progressCounter += 1
