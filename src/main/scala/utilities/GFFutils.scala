@@ -48,9 +48,15 @@ trait GFFutils {
     *
     * @return GFFLine object
     */
-  def toGFFLine: String => GFFLine = line => {
+  def toGFFLine: (String, Boolean) => Option[GFFLine] = (line, showWarnings) => {
     val tmp = line.split("\t")
-    new GFFLine(tmp(0), tmp(1), tmp(2), tmp(3).toInt, tmp(4).toInt, tmp(6), getGeneName(tmp(8)), getGeneID(tmp(8)))
+    if(tmp.size < 9) {
+      //log message
+      if (showWarnings) println(timeStamp + "----WARNING: found a non-GFF-formatted line. Skipping: " + line)
+      None
+    }
+    else Option(new GFFLine(tmp(0), tmp(1), tmp(2), tmp(3).toInt, tmp(4).toInt,
+      tmp(6), getGeneName(tmp(8)), getGeneID(tmp(8))))
   }
 
   /** Harcoded string in the GFF file to identify unique gene ID. Used in the method, 'getGeneID' */
@@ -63,11 +69,14 @@ trait GFFutils {
     val annotation = attribute.split(";")
     val locus_tag = annotation.find(_.contains("locus_tag="))
     val gene_name = annotation.find(_.contains("Name="))
-    if (locus_tag == None && gene_name == None) None
-    else if (locus_tag == None && gene_name != None) Option(gene_name.get.substring(5))
+    if(locus_tag.isEmpty){
+      if(gene_name.isEmpty) None
+      else Option(gene_name.get.substring(5))
+    }
     else {
-      if (locus_tag.get.substring(10) == gene_name.get.substring(5)) Option(locus_tag.get.substring(10))
-      else Option(locus_tag.get.substring(10) + "_" + gene_name.get.substring(5))
+      val lt = locus_tag.get.substring(10)
+      if(gene_name.isEmpty) Option(lt)
+      else Option(lt + "_" + gene_name.get.substring(5))
     }
   }
 
@@ -75,8 +84,8 @@ trait GFFutils {
     * Method to extract the local gene id
     */
   private def getGeneID(x: String): String = {
-    val tmp = x.split(";").find(_.contains(gene_id_string)).get
-    tmp.substring(tmp.indexOf(gene_id_string) + 3)
+    val tmp = x.split(";").find(_.contains(gene_id_string))
+    if(tmp.isEmpty) "none" else tmp.get.substring(tmp.get.indexOf(gene_id_string) + 3)
   }
 
   /**

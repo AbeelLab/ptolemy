@@ -27,15 +27,9 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
     * @return Map[Int, Seq[MinKmer]
     */
   def getReadMinimizers(kmer_size: Int, window_size: Int)
-                       (read: FastaEntry): (Map[Int, Seq[Minimizer]]) = {
-    //first get minimizers
-    getMinimizers(kmer_size, window_size, read.sequence, read.length)
-      //then build map, note that the same hashvalue can have multiple minimizers
-      .foldLeft(Map[Int, Seq[Minimizer]]())((map, minimizer) => {
-      //get current minimizers for current hashvalue
-      val current = map.getOrElse(minimizer.hashvalue, Seq[Minimizer]())
-      map + (minimizer.hashvalue -> (current.:+(minimizer)))
-    })
+                       (read: FastaEntry): (Map[Int, List[Minimizer]]) = {
+    //get minimizers and groupy by hashvalue
+    getMinimizers(kmer_size, window_size, read.sequence, read.length).groupBy(_.hashvalue)
   }
 
 
@@ -100,11 +94,11 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
     *                           between two nodes
     * @return
     */
-  def curateAlignments(alignment: Seq[(Int, (Int, Int), Int, Int)],
+  def curateAlignments(alignment: List[(Int, (Int, Int), Int, Int)],
                        read_size: Int,
                        min_size: Int,
                        overlap_proportion: Double,
-                      ): Seq[(Int, (Int, Int), Int, Int)] = {
+                      ): List[(Int, (Int, Int), Int, Int)] = {
 
     /**
       * Method to determine whether two node alignments overlap by some threshold. If so, these are considered invalid
@@ -129,7 +123,7 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
       * @param m Overlapping invalid alignments
       * @return (Int, (Int, Int), Int, Int)
       */
-    def mergeAlignments(m: Seq[(Int, (Int, Int), Int, Int)]): (Int, (Int, Int), Int, Int) = {
+    def mergeAlignments(m: List[(Int, (Int, Int), Int, Int)]): (Int, (Int, Int), Int, Int) = {
       //get left-most coordinate
       val start = m.map(_._2._1).min
       //get right-most coordinate
@@ -146,37 +140,37 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
       * @param merged Final sequence of alignments with the ambiguous representations
       * @return Seq[(Int, (Int, Int), Int, Int)]
       */
-    @tailrec def mergeInvalids(a: Seq[(Int, (Int, Int), Int, Int)],
-                               acc: Seq[(Int, (Int, Int), Int, Int)],
-                               merged: Seq[(Int, (Int, Int), Int, Int)]): Seq[(Int, (Int, Int), Int, Int)] = {
+    @tailrec def mergeInvalids(a: List[(Int, (Int, Int), Int, Int)],
+                               acc: List[(Int, (Int, Int), Int, Int)],
+                               merged: List[(Int, (Int, Int), Int, Int)]): List[(Int, (Int, Int), Int, Int)] = {
       //no more nodes to process
       if (a.isEmpty) {
         //no remaining nodes to merge
         if (acc.isEmpty) merged
         //merge remaining nodes if there is more than 1
-        else if (acc.size == 1) merged.:+(acc.head) else merged.:+(mergeAlignments(acc))
+        else if (acc.size == 1) (acc.head :: merged) else (mergeAlignments(acc) :: merged)
       }
       //accumulative is empty so add current node alignment
-      else if (acc.isEmpty) mergeInvalids(a.tail, acc.:+(a.head), merged)
+      else if (acc.isEmpty) mergeInvalids(a.tail, a.head :: acc, merged)
       //check if current node alignment overlaps/is invalid with any current invalid alignments
       else {
         //current node alignment overlaps with one of the invalid node alignments
-        if (acc.exists(x => isInvalidAlignment(x._2, a.head._2))) mergeInvalids(a.tail, acc.:+(a.head), merged)
+        if (acc.exists(x => isInvalidAlignment(x._2, a.head._2))) mergeInvalids(a.tail, a.head :: acc, merged)
         //current node alignment does not overlap, merge current overlapping one and move to collection
-        else mergeInvalids(a.tail, Seq(a.head),
-          if (acc.size == 1) merged.:+(acc.head) else merged.:+(mergeAlignments(acc)))
+        else mergeInvalids(a.tail, List(a.head),
+          if (acc.size == 1) acc.head :: merged else mergeAlignments(acc) :: merged)
       }
     }
 
     //merge invalid alignments
-    val merged_alignments = mergeInvalids(alignment, Seq(), Seq())
+    val merged_alignments = mergeInvalids(alignment, List(), List()).reverse
     //compute ending index
     val ending_index = if (merged_alignments.size == 1) 0 else (merged_alignments.size - 2 + 1) - 1
 
     /**
       * Curate merged alignments: create a sequence of unaligned, invalid, and valid alignments.
       */
-    merged_alignments.sliding(2).foldLeft((0, Seq[(Int, (Int, Int), Int, Int)]())) {
+    merged_alignments.sliding(2).foldLeft((0, List[(Int, (Int, Int), Int, Int)]())) {
       case ((index, curated_alignments), nodes) => {
         /**
           * Get unaligned region between the first and second node
@@ -201,7 +195,7 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
               //this is to handle cases when there is only one node alignment: first add common regions
               val tmp = {
                 //beginning
-                Seq(unalignedInstance((1, nodes.head._2._1 - 1)),
+                List(unalignedInstance((1, nodes.head._2._1 - 1)),
                   //first alignment
                   nodes(0))
               }
@@ -209,7 +203,7 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
               if (nodes.size == 1) tmp.:+(unalignedInstance((nodes(0)._2._2 + 1, read_size)))
               //multiple alignments, add the following
               else tmp ++
-                Seq(//in-between
+                List(//in-between
                   unalignedInstance(getUnalignedRegion),
                   //second alignment
                   nodes(1),
@@ -219,7 +213,7 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
             //very first index: add the following
             case 0 =>
               //beginning
-              Seq(unalignedInstance((1, nodes.head._2._1 - 1)),
+              List(unalignedInstance((1, nodes.head._2._1 - 1)),
                 //first alignment
                 nodes(0),
                 //in-between
@@ -227,7 +221,7 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
             //last index: add the following
             case `ending_index` =>
               //first alignment
-              Seq(nodes(0),
+              List(nodes(0),
                 //in-between
                 unalignedInstance(getUnalignedRegion()),
                 //last alignment
@@ -237,13 +231,13 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
             //any other index, add the following
             case _ =>
               //first alignment and unaligned instance
-              Seq(nodes(0), unalignedInstance(getUnalignedRegion()))
+              List(nodes(0), unalignedInstance(getUnalignedRegion()))
           }
         }
         //increment index, add local curations while filter for unaligned regions (flag -2) meeting minimum size
-        (index + 1, curated_alignments ++ local_curation.filter(x => x._1 != -2 || x._2._2 - x._2._1 + 1 >= min_size))
+        (index + 1, local_curation.filter(x => x._1 != -2 || x._2._2 - x._2._1 + 1 >= min_size).reverse ::: curated_alignments)
       }
-    }._2
+    }._2.reverse
   }
 
   /**
@@ -252,7 +246,7 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
     *
     * @return Seq[Seq[(Int,Int)]
     */
-  def maxContiguousAlignments: Seq[(Int, (Int, Int), Int, Int)] => Seq[Seq[(Int, Int)]] = alignments => {
+  def maxContiguousAlignments: List[(Int, (Int, Int), Int, Int)] => List[List[(Int, Int)]] = alignments => {
 
     /**
       * Tail-recursive method to find maximum contiguous alignments. Returns same as parent function.
@@ -262,25 +256,25 @@ trait ReadAlignmentUtils extends MMethods with ReadGFA with ReadUtils {
       * @param split_alignments Sequence of split alignments
       * @return Seq[Seq[(Int, Int)]
       */
-    @tailrec def _maxContiguousAlignments(_alignments: Seq[(Int, (Int, Int), Int, Int)],
-                                          acc: Seq[(Int, Int)], split_alignments: Seq[Seq[(Int, Int)]]): Seq[Seq[(Int, Int)]] = {
+    @tailrec def _maxContiguousAlignments(_alignments: List[(Int, (Int, Int), Int, Int)],
+                                          acc: List[(Int, Int)],
+                                          split_alignments: List[List[(Int, Int)]]): List[List[(Int, Int)]] = {
       //not more alignments to go through
       if (_alignments.isEmpty) {
         //no max contiguous alignment to add, or add max contiguous alignment
-        if (acc.isEmpty) split_alignments else split_alignments.:+(acc)
+        if (acc.isEmpty) split_alignments else (acc :: split_alignments)
       }
       else {
         //get current alignment
         val current = (_alignments.head._1, _alignments.head._3)
         //if it's not an ambiguous alignment or unaligned region, add to current maximum contiguous alignment
-        if (current._1 >= 0) _maxContiguousAlignments(_alignments.tail, acc.:+(current), split_alignments)
+        if (current._1 >= 0) _maxContiguousAlignments(_alignments.tail, current :: acc, split_alignments)
         //ambiguous alignment, create a split alignment
-        else _maxContiguousAlignments(_alignments.tail, Seq(),
-          if (acc.isEmpty) split_alignments else split_alignments.:+(acc))
+        else _maxContiguousAlignments(_alignments.tail, List(),
+          if (acc.isEmpty) split_alignments else acc :: split_alignments)
       }
     }
-
-    _maxContiguousAlignments(alignments, Seq(), Seq())
+    _maxContiguousAlignments(alignments, List(), List()).reverse.map(_.reverse)
   }
 
 

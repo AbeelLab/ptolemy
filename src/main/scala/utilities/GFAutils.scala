@@ -140,6 +140,14 @@ object GFAutils {
       (split(1), if (split(2).isEmpty) IndexedSeq[Int]() else split(2).split("""\W+""").map(_.toInt).toIndexedSeq)
     }
 
+    def updateWithCoverage: (String,Int) => String = (line, coverage) => {
+      val split = line.split("\t")
+      split.head match {
+        case "L" => line + "\tFC:i:" + coverage
+        case "S" => line.split("\t").dropRight(1).mkString("\t") + "\tFC:i:" + coverage
+      }
+    }
+
     /**
       * Get only the graph and the paths in a GFA file.
       *

@@ -140,13 +140,11 @@ object Extract extends tLines with GFFutils with MinimapUtils {
 
     //iterate through each sample and construct database
     genomes.foreach { case (sample_name, assembly_file, gff_file) => {
-      //keep tabs of the starting ids
-      val local_orf_id = global_orf_id
-      val local_inter_id = global_inter_id
-
       println(timeStamp + "--" + sample_name)
-      //open GFF file
-      val annotations = tLines(gff_file).map(toGFFLine(_)).filter(_.feature == annotation_type)
+      //open GFF file, attempt to convert gff line to gff objects, collect non-empty, return those with proper
+      // annotation type
+      val annotations = tLines(gff_file).map(x => toGFFLine(x, config.showWarnings))
+        .collect{case x if(x.nonEmpty) => x.get}.filter(_.feature == annotation_type)
       if (config.verbose) println(timeStamp + "----Found " + annotations.size + " ORFs")
       //create output file to store ORF sequences
       val orf_sequences_file = new File(config.outputDir + "/" + sample_name + ".orfs.sequences.fasta")
@@ -176,13 +174,13 @@ object Extract extends tLines with GFFutils with MinimapUtils {
         orfs.foreach(orf => {
           //update map z and z prime
           updateZ(sequence_id, orf.id)
-          //update global orf id
-          global_orf_id = orf.id
           //output to database
           pw_id2fasta.println(orf.id + "\t" + sample_name + ".orfs.sequences.fasta")
           pw_orf_id.println(orf.description + "\t" + sample_name + "\t" + orf.id)
           pw_orf_seq.println(">" + orf.id + "\n" + current_chrm.getSequence.substring(orf.start - 1, orf.end))
         })
+        //update global orf id
+        global_orf_id = updated_orf_id
         //output inter2id mapping scheme and intergenic sequence
         intergenics.foreach(inter => {
           //update global intergenic id
@@ -194,14 +192,12 @@ object Extract extends tLines with GFFutils with MinimapUtils {
         })
         //update map y and y prime
         updateY(sample_name, sequence_id)
+        //update global intergenic id
+        global_inter_id = updated_inter_id
       }
       //close output files
       pw_orf_seq.close()
       pw_inter_seq.close()
-
-      //increment global ids if indeed added sequences
-      if(local_inter_id != global_inter_id) global_inter_id += 1
-      if(local_orf_id != global_orf_id) global_orf_id += 1
 
       //get repetative region start,end node positions
       val repetative_regions = {

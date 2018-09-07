@@ -26,6 +26,7 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
                      gamma: Double = 0.75,
                      flankingWindow: Int = 10,
                      verbose: Boolean = false,
+                     mergeCC: Boolean = false,
                      dump: Boolean = false,
                      syntenicFraction: Double = 0.5,
                      kmerSize: Int = 11,
@@ -48,12 +49,15 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
       opt[Unit]("circular") action { (x, c) =>
         c.copy(isCircular = true)
       } text ("Genome can be circular (default is false).")
-      opt[File]("brhs") action { (x, c) =>
-        c.copy(brh = x)
-      } text ("If best reciprocal hits file already exists, provide it here to skip pairwise-ORF alignments.")
       opt[Int]('f', "flanking-window") action { (x, c) =>
         c.copy(flankingWindow = x)
       } text ("Flanking window (default is 10).")
+      opt[Unit]("merge-ccs") action { (x, c) =>
+        c.copy(mergeCC = true)
+      } text ("Skip synteny alignment and directly merge connected components of BRHs as syntenic anchors.")
+      opt[File]("brhs") action { (x, c) =>
+        c.copy(brh = x)
+      } text ("If BRHs file already exists, provide it here to skip pairwise-ORF alignments.")
       note("\nOPTIONAL: ALIGNMENT PARAMETERS\n")
       opt[Int]('t', "threads") action { (x, c) =>
         c.copy(maxThreads = x)
@@ -151,7 +155,7 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
         //dump best alignments
         if (config.dump) {
           val pw = new PrintWriter(config.outputDir + "/best_alignments.txt")
-          hashmap_H_prime.foreach(x => pw.println(Seq(x._1, x._2.mkString(",")).mkString("\t")))
+          hashmap_H_prime.foreach(x => pw.println(x._1 + "\t" + x._2.mkString(",")))
           pw.close
         }
         println(timeStamp + "Collected " + hashmap_H_prime.map(_._2.size).sum + " best pairwise ORF alignments")
@@ -186,7 +190,7 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
     //set max threads to use
     cc_brhs.tasksupport = new ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool(config.maxThreads))
 
-    if(config.dump) {
+    if (config.dump) {
       val pw_cc = new PrintWriter(config.outputDir + "/ccs.txt")
       cc_brhs.foreach(cc => pw_cc.println(cc.mkString(",")))
       pw_cc.close
@@ -412,53 +416,58 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
     println(timeStamp + "Computing syntenic anchors in each connected component")
     //iterate through each connected component
     cc_brhs.foreach(cc => {
-      //group by genome
-      val cc_grouped = cc.groupBy(x => hashmap_Y_prime(hashmap_Z_prime(x)))
-        //iterate through each genome and set of ORFs
-        .mapValues(group => {
-        //check if group is part of repeat expansion. ASSUMES THAT IF ONE ORF IS AN RER, THAN SO ARE REST
-        val isRepeatExpansion = group.exists(rer.contains(_))
-        //if it's a repeat expansion, arbitraily get on
-        if (isRepeatExpansion) group.take(1) else group
-      })
-      val cc_reduced = cc_grouped.map(_._2).flatten
-      //pairwise comparison of all orfs
-      val syntenic_anchors = cc.foldLeft(List[((Int, Int), Int)]())((synteny_scores, subject_orf) => {
-        //construct syntenic vectors for current orf
-        val (subject_left_sv, subject_general_sv, subject_right_sv) = getSyntenicVector(subject_orf)
-        //iterate through target orfs
-        cc.foldLeft(synteny_scores)((local_synteny_scores, target_orf) => {
-          //skip if orfs are from same genome
-          if (hashmap_Y_prime(hashmap_Z_prime(subject_orf)) == hashmap_Y_prime(hashmap_Z_prime((target_orf)))) local_synteny_scores
-          //calculate synteny score
-          else {
-            //println(subject_orf, target_orf)
-            //println((subject_left_sv, subject_general_sv, subject_right_sv))
-            //get syntenic vectors of target
-            val (target_left_sv, target_general_sv, target_right_sv) = getSyntenicVector(target_orf)
-            //println((target_left_sv, target_general_sv, target_right_sv))
-            //get smallest synteny score
-            val synteny_score = List(computeSVscore(subject_left_sv._1, target_left_sv),
-              computeSVscore(subject_general_sv._1, target_general_sv),
-              computeSVscore(subject_right_sv._1, target_right_sv)).min
-            //update synteny score
-            local_synteny_scores.:+((subject_orf, target_orf), synteny_score)
-          }
+      //automatically merge ccs into a syntenic anchor if parameter is turned on
+      if (config.mergeCC) cc.foreach(x => pw_syntenic_anchors.println(x + "\t" + cc.filterNot(_ == x).mkString(",")))
+      //else proceed to synteny alignment
+      else {
+        //group by genome
+        val cc_grouped = cc.groupBy(x => hashmap_Y_prime(hashmap_Z_prime(x)))
+          //iterate through each genome and set of ORFs
+          .mapValues(group => {
+          //check if group is part of repeat expansion. ASSUMES THAT IF ONE ORF IS AN RER, THAN SO ARE REST
+          val isRepeatExpansion = group.exists(rer.contains(_))
+          //if it's a repeat expansion, arbitraily get on
+          if (isRepeatExpansion) group.take(1) else group
         })
-      })
-        //process connected components into set of syntenic anchors
-        //remove high-distant orfs
-        .filter(_._2 <= 1)
-        //group by subject orf
-        .groupBy(_._1._1)
-        //group values by genome and in the case of multiple orfs for same genome, retain lowest scoring one
-        .mapValues(_.groupBy(x => hashmap_Y_prime(hashmap_Z_prime(x._1._2))).mapValues(_.minBy(_._2)._1._2))
-        //merge all orfs into one set, creating the syntenic anchors
-        //--to do: see if this needs partitioning identify highly connected subgraphs?
-        .foldLeft(Set[Int]())((b, a) => a._2.foldLeft(b)((c, d) => c + d._2) + a._1)
-      //iterate and output to file
-      syntenic_anchors.foreach(x =>
-        pw_syntenic_anchors.println(Seq(x, syntenic_anchors.filterNot(_ == x).mkString(",")).mkString("\t")))
+        val cc_reduced = cc_grouped.map(_._2).flatten
+        //pairwise comparison of all orfs
+        val syntenic_anchors = cc.foldLeft(List[((Int, Int), Int)]())((synteny_scores, subject_orf) => {
+          //construct syntenic vectors for current orf
+          val (subject_left_sv, subject_general_sv, subject_right_sv) = getSyntenicVector(subject_orf)
+          //iterate through target orfs
+          cc.foldLeft(synteny_scores)((local_synteny_scores, target_orf) => {
+            //skip if orfs are from same genome
+            if (hashmap_Y_prime(hashmap_Z_prime(subject_orf)) == hashmap_Y_prime(hashmap_Z_prime((target_orf)))) local_synteny_scores
+            //calculate synteny score
+            else {
+              //println(subject_orf, target_orf)
+              //println((subject_left_sv, subject_general_sv, subject_right_sv))
+              //get syntenic vectors of target
+              val (target_left_sv, target_general_sv, target_right_sv) = getSyntenicVector(target_orf)
+              //println((target_left_sv, target_general_sv, target_right_sv))
+              //get smallest synteny score
+              val synteny_score = List(computeSVscore(subject_left_sv._1, target_left_sv),
+                computeSVscore(subject_general_sv._1, target_general_sv),
+                computeSVscore(subject_right_sv._1, target_right_sv)).min
+              //update synteny score
+              local_synteny_scores.:+((subject_orf, target_orf), synteny_score)
+            }
+          })
+        })
+          //process connected components into set of syntenic anchors
+          //remove high-distant orfs
+          .filter(_._2 <= 1)
+          //group by subject orf
+          .groupBy(_._1._1)
+          //group values by genome and in the case of multiple orfs for same genome, retain lowest scoring one
+          .mapValues(_.groupBy(x => hashmap_Y_prime(hashmap_Z_prime(x._1._2))).mapValues(_.minBy(_._2)._1._2))
+          //merge all orfs into one set, creating the syntenic anchors
+          //--to do: see if this needs partitioning identify highly connected subgraphs?
+          .foldLeft(Set[Int]())((b, a) => a._2.foldLeft(b)((c, d) => c + d._2) + a._1)
+        //iterate and output to file
+        syntenic_anchors.foreach(x =>
+          pw_syntenic_anchors.println(Seq(x, syntenic_anchors.filterNot(_ == x).mkString(",")).mkString("\t")))
+      }
     })
     pw_syntenic_anchors.close
     println(timeStamp + "Succesfully completed!")

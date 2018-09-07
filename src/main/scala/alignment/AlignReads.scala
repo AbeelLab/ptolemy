@@ -34,9 +34,11 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                      chunkSize: Int = 30000,
                      minReadLength: Int = 500,
                      lengthProportion: Double = 0.3,
-                     minHits: Int = 3,
+                     minCoverage: Int = 5,
+                     minHits: Int = 1,
                      maxThreads: Int = 1,
                      verbose: Boolean = false,
+                     minGeneLength: Int = -1,
                      prefix: String = null,
                      outputDir: File = null,
                      debug: Boolean = false,
@@ -60,8 +62,8 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
         c.copy(prefix = x)
       } text ("Prefix for output file.")
       note("\nOPTIONAL\n")
-      opt[Int]("minimum-length") action { (x, c) =>
-        c.copy(kmerSize = x)
+      opt[Int]("read-length") action { (x, c) =>
+        c.copy(minReadLength = x)
       } text ("Minimum read length (default is 500). Only read length of at least this size are processed.")
       opt[Int]('t', "threads") action { (x, c) =>
         c.copy(maxThreads = x)
@@ -85,8 +87,14 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
         c.copy(lengthProportion = x)
       } text ("Maximum tolerable ratio between the the length of cluster and the size of a node (default is 0.3)")
       opt[Int]("min-hits") action { (x, c) =>
-        c.copy(chunkSize = x)
+        c.copy(minHits = x)
       } text ("Minimum number of minimizer hits for candidate node alignments (default is 3).")
+      opt[Int]("annotation-length") action { (x, c) =>
+        c.copy(minGeneLength = x)
+      } text ("Overwrite smallest observed annotation in the population to this value.")
+      opt[Int]("min-coverage") action { (x, c) =>
+        c.copy(minCoverage = x)
+      } text ("Only report nodes and edges with at least this amount of coverage (default is 5).")
       opt[Int]("chunk-size") action { (x, c) =>
         c.copy(chunkSize = x)
       } text ("Number of reads to load at a time(default is 30000).")
@@ -101,6 +109,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
       //check whether output directory exists. If not, create it.
       verifyDirectory(config.db)
       verifyFile(config.canonicalQuiver)
+      verifyFile(config.reads)
       alignReads(config)
     }
   }
@@ -153,13 +162,14 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
       global_node_info_index.values.map(x => x._1.toDouble / x._2).sum / global_node_info_index.size
     }
     //get smallest gene
-    val smallest_gene = global_node_info_index.values.minBy(_._2)._2
+    val smallest_gene = if (config.minGeneLength == -1) global_node_info_index.values.minBy(_._2)._2 else config.minGeneLength
 
     println(timeStamp + "Average kmer set size ratio: " + average_kmer_set_size_ratio)
     println(timeStamp + "Smallest annotated gene: " + smallest_gene)
 
     //compute expected jaccard index for the given max tolerable error rate and kmer size
     val expected_ji = expectedJI(config.maxError, config.kmerSize)
+
     //compute expected minimizer hits
     def expectedMinHits: Int => Int = node => ((expected_ji) * global_node_info_index(node)._1).toInt
 
@@ -176,29 +186,13 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
     //get read file type
     val read_file_type = determineFileType(config.reads)
     //load reads as iterator
-    val read_iterator = {
-      //load iterator depending on file type
-      read_file_type match {
-        case `fasta_extension` | `fastq_extension` => openFileWithIterator(config.reads)
-        case `fastq_gz_extension` => openGZFileWithIterator(config.reads)
-      }
-    }
+    val read_iterator = loadReadsIterator(config.reads)
     var next_line: Option[String] = None
     println(timeStamp + "Loading from " + read_file_type + "-formatted file")
     //iterate through each read and align
     while (read_iterator.hasNext) {
       //load next chunk of reads depending on file type
-      val (current, runoff_line) = {
-        //check file type
-        read_file_type match {
-          //for a FASTA-formatted file
-          case `fasta_extension` =>
-            loadFastaChunk(read_iterator, List(), config.chunkSize, config.minReadLength, next_line, new StringBuilder)
-          //for a FASTQ-formatted file
-          case `fastq_extension` | `fastq_gz_extension` =>
-            loadFastqChunk(read_iterator, List(), config.chunkSize, config.minReadLength, List())
-        }
-      }
+      val (current, runoff_line) = loadReadChunk(read_iterator, next_line, read_file_type, config.chunkSize, config.minReadLength)
       println(timeStamp + "Loaded " + current.size + " reads")
       //set maximum number of threads to use
       current.tasksupport = new ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool(config.maxThreads))
@@ -215,37 +209,33 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
         if (verbose) println(timeStamp + "Processing read " + current_read.name + " of " + current_read.length + " nt")
         //get overlapping nodes and minimizers hits as well as minimizer orphans
         val (node2kmers, minimizer_orphans) = {
-          val tmp =
-            all_read_minimizers.foldLeft((Map[Int, Set[Int]](), Set[(Int, Int)]())) {
-              case ((_node2kmers, orphans), minimizer) => {
-                //fetch nodes that contain the current kmer
-                val fetch = global_node_kmer_index.get(minimizer._1)
-                //no nodes contain current kmer
-                if (fetch == None) {
-                  (_node2kmers, minimizer._2.foldLeft(orphans)((b, a) =>
-                    b + ((a.hashvalue, forwardPosition(a, current_read.length, config.kmerSize)))))
-                }
-                //add nodes to sequence of nodes
-                else {
-                  (fetch.get.foldLeft(_node2kmers)((local_node2kmers, node_id) => {
-                    val current = local_node2kmers.getOrElse(node_id, Set[Int]())
-                    local_node2kmers + (node_id -> (current + (minimizer._1)))
-                  }), orphans)
-                }
+          val tmp = all_read_minimizers.foldLeft((Map[Int, Set[Int]](), List[(Int, Int)]())) {
+            case ((_node2kmers, orphans), minimizer) => {
+              //fetch nodes that contain the current kmer
+              val fetch = global_node_kmer_index.get(minimizer._1)
+              //no nodes contain current kmer
+              if (fetch == None) {
+                (_node2kmers, minimizer._2.foldLeft(orphans)((b, a) =>
+                  (a.hashvalue, forwardPosition(a, current_read.length, config.kmerSize)) :: b))
+              }
+              //add nodes to sequence of nodes
+              else {
+                (fetch.get.foldLeft(_node2kmers)((local_node2kmers, node_id) => {
+                  val current = local_node2kmers.getOrElse(node_id, Set[Int]())
+                  local_node2kmers + (node_id -> (current + (minimizer._1)))
+                }), orphans)
               }
             }
+          }
+
           //retain nodes with enough minimizer hits. this is based on the expected number of minimizers using the
           // average kmer set size.
-          (tmp._1.filter(x =>{
-            //to accomodate for differences in sequence sizes and the error bound, reduce threshold by 2 to the
-            // minimizer hits to slightly decrease number. (hardcoded, not been optimized)
-            x._2.size >= expectedMinHits(x._1) - 2
-          }) , tmp._2)
+          (tmp._1.filter(x => x._2.size >= expectedMinHits(x._1)), tmp._2.distinct)
         }
         //get aligned nodes in order in which it appears in the read in 4-tuple (node, (start,end), orientation, hits)
         // note: orientation is simply majority count of the read-node minimizer orientation occurrance
         val (aligned_nodes, failed_clusters) = {
-          val parent_tmp = node2kmers.foldLeft((Seq[(Int, (Int, Int), Int, Int)](), Set[Int]())) {
+          val parent_tmp = node2kmers.foldLeft((List[(Int, (Int, Int), Int, Int)](), Set[Int]())) {
             case ((found_nodes, _failed_clusters), (node, kmers)) => {
               if (verbose) println(timeStamp + "--Processing node " + node + " with " + kmers.size + " kmers")
               //get average minimizer set size and seq size for current node
@@ -276,7 +266,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
               //get expected number of minimizer hits
               val expected_hits = expectedMinHits(node)
               if (verbose) println(timeStamp + "----Expected " + expected_hits + "minimizer hits based on mean " +
-                  "minimizer set size of " + avg_ms)
+                "minimizer set size of " + avg_ms)
               //size ratio is too low
               if (size_difference_ratio < config.lengthProportion) (found_nodes, _failed_clusters)
               //jaccard index of node is below expected but has enough minimizer hits for something potentially relevant
@@ -285,17 +275,17 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
               //jaccard index is at least of the expected score, consider alignment
               else {
                 //create a map of the minimizer hashvalue -> orientation(s)
-                val read_kmers2orientation = max_dense_cluster.foldLeft(Map[Int, Seq[Int]]()) {
+                val read_kmers2orientation = max_dense_cluster.foldLeft(Map[Int, List[Int]]()) {
                   case (ro_map, (minimizer, position)) => {
-                    val current = ro_map.getOrElse(minimizer.hashvalue, Seq[Int]())
-                    ro_map + (minimizer.hashvalue -> (current.:+(minimizer.orientation)))
+                    val current = ro_map.getOrElse(minimizer.hashvalue, List[Int]())
+                    ro_map + (minimizer.hashvalue -> ((minimizer.orientation) :: current))
                   }
                 }
                 //pair the orientations of a read minimizer hit to the node minimizer hit and count their occurrances
                 // as well as creating a 2-tuple of (read-forward position, node-forward position)
                 val (orientation, start, end) = {
                   //fetch all node minimizers and iterate through them with map of orientation occurance -> count
-                  val tmp = global_node_index(node).foldLeft((Map[Int, Int](), Seq[(Int, Int)]())) {
+                  val tmp = global_node_index(node).foldLeft((Map[Int, Int](), List[(Int, Int)]())) {
                     case ((zo_map, read2node_positions), minimizer) => {
                       //attempt to get the corresponding orientation of current minimizer in the read
                       val read_orientations = read_kmers2orientation.get(minimizer.hashvalue)
@@ -315,9 +305,8 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                           //get corresponding read minimizer(s) and add forward positions to sequence
                           all_read_minimizers(minimizer.hashvalue)
                             .foldLeft(read2node_positions)((local_read2node_pos, rm) => {
-                            local_read2node_pos.:+(
-                              (forwardPosition(rm, current_read.length, config.kmerSize), node_forward_position))
-                          }))
+                              (forwardPosition(rm, current_read.length, config.kmerSize), node_forward_position) :: local_read2node_pos
+                            }))
                       }
                     }
                   }
@@ -345,7 +334,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                     println(timeStamp + "----Predicted start/end coordinates: " + (start, end))
                     println(timeStamp + "----Choosing orientation: " + orientation)
                   }
-                  (found_nodes.:+((node, (start, end), orientation, unique_hits)), _failed_clusters)
+                  ((node, (start, end), orientation, unique_hits) :: found_nodes, _failed_clusters)
                 }
               }
             }
@@ -386,8 +375,8 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                 }
                 //retain as ambiguous alignment if:
                 //  number of hits to failed clusters exceeds minimum
-                from_failed >= config.minHits - 1 ||
-                  //  or its too disimilar to an intergenic region of the expected size size
+                from_failed >= config.minHits ||
+                  //  or its too disimilar to an intergenic region of the expected size
                   (from_inter / (0.5 * (alignment._2._2 - alignment._2._1 + 1)) < (expected_ji))
               })
           }
@@ -422,13 +411,13 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
 
     pw.close
     println(timeStamp + "Alignment completed")
-    updateCanonicalQuiver(config.outputDir, output_name, config.canonicalQuiver)
+    updateCanonicalQuiver(config.outputDir, output_name, config.canonicalQuiver, config.minCoverage)
   }
 
   /**
     * Method to update canonical quiver
     */
-  def updateCanonicalQuiver(output_directory: File, output_name: String, cq: File): Unit = {
+  def updateCanonicalQuiver(output_directory: File, output_name: String, cq: File, min_coverage: Int): Unit = {
     val tmp_output = new File(output_directory + "/." + output_name + ".tmp")
     println(timeStamp + "Computing edge coverage")
     //iterate through alignments and keep track of edges and their coverage as well as total reads and unmapped
@@ -436,20 +425,30 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
     println(timeStamp + "Found " + total_alignments + " total alignments, of which " +
       (unmapped.toDouble / total_alignments) * 100 + "% are unmapped")
     println(timeStamp + "Writing coverage to disk")
-    val pw = new PrintWriter(output_directory + "/" + output_name)
-    //load canonical quiver and add coverage information while retaining new edges
+    val pws = new PrintWriter(output_directory + "/" + output_name.replace(".gfa", ".static.gfa"))
+    pws.println("H\tAlignment to canonical quiver (static)")
+    val pwd = new PrintWriter(output_directory + "/" + output_name.replace(".gfa", ".dynamic.gfa"))
+    pwd.println("H\tAlignment to canonical (dynamic)")
+    //load canonical quiver and and output nodes and edges with coverage information while retaining edges never
+    // observed before
     openFileWithIterator(cq).foldLeft(edge_coverage)((filtered_coverage, line) => {
       //get line type
-      val line_type = line.split("\t").head
-      line_type match {
+      val line_split = line.split("\t")
+      line_split.head match {
         //edge line
         case "L" => {
           //get edge
           val edge = parseLinkLine(line)
           //get coverage
           val coverage = edge_coverage.getOrElse(edge, 0)
-          pw.println(line + "\tRC:" + coverage)
-          if (coverage == 0) filtered_coverage else filtered_coverage - edge
+          //update line with coverage
+          val updated_line = updateWithCoverage(line, coverage)
+          //if coverage is high enough, output to dynamic gfa
+          if (coverage >= min_coverage) pwd.println(updated_line)
+          //output to static gfa, regardless
+          pws.println(updated_line)
+          //remove edge
+          filtered_coverage - edge
         }
         //node line
         case "S" => {
@@ -457,26 +456,32 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
           val node = parseSegmentLine(line)
           //get coverage
           val coverage = node_coverage.getOrElse(node, 0)
-          pw.println(line + "\tRC:" + coverage)
+          //update line with coverage
+          val updated_line = updateWithCoverage(line, coverage)
+          //output to dynamic if coverage is high enough
+          if (coverage >= min_coverage) pwd.println(updated_line)
+          //output to static regardless
+          pws.println(updated_line)
           filtered_coverage
         }
         //Something else, move on
-        case _ => {
-          pw.println(line)
-          filtered_coverage
-        }
+        case _ => filtered_coverage
       }
     })
       //add new edges to output
       .foldLeft(0)((index, new_edge) => {
-      if (index == 0) pw.println("#NEW EDGES FROM READ ALIGNMENTS")
-      pw.println("L\t" + new_edge._1._1 + "\t+\t" + new_edge._1._2 + "\t+\t1M\tRC:" + new_edge._2)
+      if (new_edge._2 >= min_coverage) pwd.println("L\t" + new_edge._1._1 + "\t+\t" + new_edge._1._2 +
+        "\t+\t1M\tFC:i:" + new_edge._2)
       index + 1
     })
+
     //iterate through alignments once more and output to file
-    pw.println("#READ ALIGNMENTS")
-    openFileWithIterator(tmp_output).foreach(pw.println)
-    pw.close()
+    openFileWithIterator(tmp_output).foreach(x => {
+      pwd.println(x)
+      pws.println(x)
+    })
+    pwd.close()
+    pws.close()
     tmp_output.delete()
     println("Successfully completed!")
   }

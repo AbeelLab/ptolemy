@@ -1,11 +1,12 @@
 package utilities
 
 import java.io.File
-
-import utilities.SequenceUtils.{encodeSequence}
+import utilities.FileHandling.{openFileWithIterator, openGZFileWithIterator}
+import utilities.SequenceUtils.encodeSequence
 
 import scala.annotation.tailrec
 import scala.collection.parallel.ParSeq
+import scala.collection.parallel.mutable.ParArray
 
 /**
   * Author: Alex N. Salazar
@@ -76,6 +77,31 @@ trait ReadUtils {
     file_type.get
   }
 
+  def loadReadsIterator: File => Iterator[String] = file => {
+    //get read file type
+    val read_file_type = determineFileType(file)
+    //load iterator depending on file type
+    read_file_type match {
+      case `fasta_extension` | `fastq_extension` => openFileWithIterator(file)
+      case `fastq_gz_extension` => openGZFileWithIterator(file)
+    }
+  }
+
+  def loadReadChunk(read_iterator: Iterator[String],
+                    next_line: Option[String],
+                    read_file_type: String,
+                    max_reads: Int,
+                    min_length: Int): (ParArray[FastaEntry], Option[String]) = {
+    //check file type
+    read_file_type match {
+      //for a FASTA-formatted file
+      case `fasta_extension` =>
+        loadFastaChunk(read_iterator, List(), max_reads, min_length, next_line, new StringBuilder)
+      //for a FASTQ-formatted file
+      case `fastq_extension` | `fastq_gz_extension` =>
+        loadFastqChunk(read_iterator, List(), max_reads, min_length, List())
+    }
+  }
 
   /**
     * Function to extract read ID from a given FASTQ or FASTA line
@@ -84,13 +110,19 @@ trait ReadUtils {
     */
   def getReadName: String => String = line => line.substring(1).split("\\s+").head
 
+
   /**
     * Function to convert a list of FASTA or FASTQ lines to FastaEntry object
     *
     * @return FastaEntry
     */
-  def fastq2FastaEntry: List[String] => FastaEntry = lines =>
-    new FastaEntry(getReadName(lines.head), encodeSequence(lines(1)), lines(1).size)
+  def fastq2FastaEntry: List[String] => FastaEntry = _lines =>{
+    val lines = _lines.reverse
+    val name = lines.head
+    val seq = lines.tail.head
+    new FastaEntry(getReadName(name), encodeSequence(seq), seq.size)
+  }
+
 
   /**
     * Tail-recursive method to load some maximum number of reads into a chunk from a FASTQ-formatted file.
@@ -106,18 +138,19 @@ trait ReadUtils {
                                     acc: List[String],
                                     remaining_reads: Int,
                                     minsize: Int,
-                                    chunk: List[FastaEntry]): (ParSeq[FastaEntry], Option[String]) = {
+                                    chunk: List[FastaEntry]): (ParArray[FastaEntry], Option[String]) = {
     //no more reads to process or loaded maximum number of reads
     if (iterator.isEmpty || remaining_reads == 0) {
       //no accumulating reads left
-      if (acc.isEmpty) (chunk.par, None)
+      if (acc.isEmpty) (chunk.toParArray, None)
       else {
         //sanity check
         assert(acc.size == 4, "Unexpected number of lines in accumulating reads after loading max read chunk: " + acc)
         //great fasta entry
         val read = fastq2FastaEntry(acc)
         //only add remaining read if it meets minimum size threshold
-        if (read.length < minsize) (chunk.par, None) else (chunk.:+(fastq2FastaEntry(acc)).par, None)
+        if (read.length < minsize) (chunk.toParArray, None)
+        else ((fastq2FastaEntry(acc) :: chunk).toParArray, None)
       }
     }
     //accumulated all lines for next read, decrement remaining reads and add to chunk
@@ -126,7 +159,7 @@ trait ReadUtils {
       val read = fastq2FastaEntry(acc)
       //only add read if it meets minimum size threshold
       if (read.length < minsize) loadFastqChunk(iterator, List(), remaining_reads, minsize, chunk)
-      else loadFastqChunk(iterator, List(), remaining_reads - 1, minsize, chunk.:+(read))
+      else loadFastqChunk(iterator, List(), remaining_reads - 1, minsize, read :: chunk)
     }
     //still processing a read
     else {
@@ -135,7 +168,7 @@ trait ReadUtils {
       //sanity check
       if (acc.isEmpty) assert(current_line.startsWith("@"), "Unexpected start of a new read: " + current_line)
       //add line to accumulator and move on
-      loadFastqChunk(iterator, acc.:+(current_line), remaining_reads, minsize, chunk)
+      loadFastqChunk(iterator, current_line :: acc, remaining_reads, minsize, chunk)
     }
   }
 
@@ -156,7 +189,7 @@ trait ReadUtils {
                                     remaining_reads: Int,
                                     minsize: Int,
                                     acc_name: Option[String],
-                                    acc_sequence: StringBuilder): (ParSeq[FastaEntry], Option[String]) = {
+                                    acc_sequence: StringBuilder): (ParArray[FastaEntry], Option[String]) = {
     //empty iterator
     if (!iterator.hasNext) {
       //no additional reads means reached end of file, check that there is a remaining read with sequence
@@ -164,7 +197,7 @@ trait ReadUtils {
       assert(!acc_sequence.isEmpty, "Expected corresponding sequence at end of file")
       //add last read to iterator
       val seq = acc_sequence.mkString
-      (chunk.:+(new FastaEntry(acc_name.get, encodeSequence(seq), seq.size)).par, None)
+      ((new FastaEntry(acc_name.get, encodeSequence(seq), seq.size) :: chunk).toParArray, None)
     }
     //loaded max number of reads
     else if (remaining_reads == 0) {
@@ -173,7 +206,7 @@ trait ReadUtils {
       //check that the corresponding sequence is empty
       assert(acc_sequence.isEmpty, "Expected no corresponding sequence for read entry after loading max number of " +
         "reads: " + acc_sequence.mkString(""))
-      (chunk.par, acc_name)
+      (chunk.toParArray, acc_name)
     }
     //keep loading reads
     else {
@@ -202,7 +235,7 @@ trait ReadUtils {
             //create a new FastaEntry object
             val fasta_entry = new FastaEntry(acc_name.get, encodeSequence(seq), seq.size)
             //add fasta entry and start accumulating new read
-            loadFastaChunk(iterator, chunk.:+(fasta_entry), remaining_reads - 1, minsize, Option(getReadName(line)),
+            loadFastaChunk(iterator,(fasta_entry) :: chunk, remaining_reads - 1, minsize, Option(getReadName(line)),
               new StringBuilder)
           }
         }

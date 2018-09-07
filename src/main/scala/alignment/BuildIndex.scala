@@ -128,14 +128,17 @@ object BuildIndex extends ReadGFA with PtolemyDB with MMethods {
     val parent_directory = getParentDirectory(config.canonicalQuiver)
     //create output files for db indeces
     val pw_nki = new PrintWriter(parent_directory + "/" + name + ".nki")
+    val pw_nki_distribution = new PrintWriter(parent_directory + "/" + name + ".nkid")
     val pw_iki = new PrintWriter(parent_directory + "/" + name + ".iki")
     val pw_ni = new PrintWriter(parent_directory + "/" + name + ".ni")
     val pw_nii = new PrintWriter(parent_directory + "/" + name + ".nii")
     //output kmer index
     // this is different the data structure constructed above, it's structured: <kmer hash>\t<node id>,<node id>...
-    global_kmer_index.foreach { case (kmer, node_map) =>
-      pw_nki.println(kmer + "\t" + node_map.foldLeft(Set[Int]())((b, a) => b + (a._1)).mkString(","))
-    }
+    global_kmer_index.foreach { case (kmer, node_map) => {
+      val local_nodes = node_map.foldLeft(Set[Int]())((b, a) => b + (a._1))
+      pw_nki.println(kmer + "\t" + local_nodes.mkString(","))
+      pw_nki_distribution.println(kmer + "\t" + local_nodes.size)
+    }}
     //output intergenic kmer index
     global_inter_kmer_index.foreach{case (kmer, empty_map) => pw_iki.println(kmer)}
     //output node index
@@ -151,6 +154,7 @@ object BuildIndex extends ReadGFA with PtolemyDB with MMethods {
 
     pw_nii.close()
     pw_nki.close()
+    pw_nki_distribution.close()
     pw_iki.close()
     pw_ni.close()
     println(timeStamp + "Successfully completed!")

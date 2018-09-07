@@ -88,56 +88,56 @@ object MinimizerUtils {
     /**
       * Get minimizers given a sequence and a window. Return sequence of hashed kmer value and starting position.
       *
-      * @param kmer_size Size of kmers
-      * @param window_size Window size for minimizer
-      * @param sequences Byte-encoded sequence (output of SequenceUtils.encodeSequence function)
+      * @param kmer_size      Size of kmers
+      * @param window_size    Window size for minimizer
+      * @param sequences      Byte-encoded sequence (output of SequenceUtils.encodeSequence function)
       * @param total_seq_size Total size of sequence
       * @return Set[Minimizer]
       */
     def getMinimizers(kmer_size: Int,
                       window_size: Int,
                       sequences: Array[(Array[Byte], Int)],
-                      total_seq_size: Int): Set[Minimizer] = {
+                      total_seq_size: Int): List[Minimizer] = {
       //iterate through each encoded sequence and collect minimizers
-      sequences.foldLeft(Set[Minimizer]()){case (global_minimizers, (sequence, starting_position)) => {
+      sequences.foldLeft(List[Minimizer]()){ case (global_minimizers, (sequence, starting_position)) => {
         //get sequence size
         val seq_size = sequence.size
         //check that that the sequence is at least the same size of desired kmers
-        if(seq_size < kmer_size) global_minimizers
+        if (seq_size < kmer_size) global_minimizers
         else {
           //create an iterator of windows each containing all kmers. w_index is the index of the current window
           sequence.sliding(kmer_size).sliding(window_size).foldLeft((global_minimizers, 0)) {
             case ((minimizers, w_index), window) => {
               //iterate through each kmer in the current window, get hashvalue as well as starting position
-              val local_minimizers = window.foldLeft((Seq[Minimizer](), 0)) {
+              val local_minimizers = window.foldLeft((List[Minimizer](), 0)) {
                 case ((local_minimizers, k_index), kmer) => {
-                //attempt to get minimum kmer
-                val minkmer = getMinKmer(kmer)
-                (if (minkmer == None) local_minimizers
-                else {
-                  //compute 1-based position of kmer corresponding strand
-                  val position = {
-                    if (minkmer.get._2 == 0) w_index + k_index + starting_position
-                    else reverseComplementCoord(w_index + k_index + starting_position, total_seq_size, kmer_size)
+                  //attempt to get minimum kmer
+                  val minkmer = getMinKmer(kmer)
+                  (if (minkmer == None) local_minimizers
+                  else {
+                    //compute 1-based position of kmer corresponding strand
+                    val position = {
+                      if (minkmer.get._2 == 0) w_index + k_index + starting_position
+                      else reverseComplementCoord(w_index + k_index + starting_position, total_seq_size, kmer_size)
+                    }
+                    //create minimizer object
+                    (new Minimizer(minkmer.get._1, position, minkmer.get._2)) :: local_minimizers
                   }
-                  //create minimizer object
-                  local_minimizers.:+(new Minimizer(minkmer.get._1, position, minkmer.get._2))
+                    , k_index + 1)
                 }
-                  , k_index + 1)
-              }
-                //get lowest kmer based on hashvalue and position
               }._1
               if (local_minimizers.isEmpty) {
                 println(timeStamp + "--Warning: no minimimizers for read of length: " + sequence.size)
                 (minimizers, w_index)
               } else {
                 //update minimizer and increment window index
-                (minimizers + (local_minimizers.minBy(x => (x.hashvalue, x.orientation))), w_index + 1)
+                ((local_minimizers.minBy(x => (x.hashvalue, x.orientation))) :: minimizers, w_index + 1)
               }
             }
           }._1
         }
-      }}
+      } //remove duplicates
+      }.groupBy(x => (x.hashvalue, x.orientation, x.position)).toList.map(_._2.head)
     }
 
     /**
@@ -195,8 +195,8 @@ object MinimizerUtils {
       * extracted from orf (provide a Map[orf id -> node id] or intergenic sequences (empty map).
       *
       * For ORF minimizers, creates and returns a minimizer hashtable and node info hashtable:
-      *   The minimizer hashtable schema: kmer -> Map(node ID -> Set(position, orientation))
-      *   The node info hashtable schema: node id -> Map(orf id -> (minimizer set size, seq size))
+      * The minimizer hashtable schema: kmer -> Map(node ID -> Set(position, orientation))
+      * The node info hashtable schema: node id -> Map(orf id -> (minimizer set size, seq size))
       *
       * For Intergenic minimizers, same as above but the minimizer table only contains keys and
       * the values are empty while the node info is empty.
@@ -204,15 +204,16 @@ object MinimizerUtils {
       * In both cases, returns minimizer hashtable and node info hashtable.
       *
       * Configuration parameters:
-      * @param kmer_size Size of kmers
-      * @param window_size Window size for minimizers
-      * @param debug Show debug-level information
-      *             Providing a non-empty maps turns on the ORF minimizer procedure:
-      * @param node_map Map of orf ID -> node ID
+      *
+      * @param kmer_size    Size of kmers
+      * @param window_size  Window size for minimizers
+      * @param debug        Show debug-level information
+      *                     Providing a non-empty maps turns on the ORF minimizer procedure:
+      * @param node_map     Map of orf ID -> node ID
       * @param nodeinfo_map Accumulating node info hashtable (see description above)
-                 Sequence-based parameters:
-      * @param fasta_file Fasta file of some sample
-      * @param kmer_index Accumulating kmer index hashtable (see description above)
+      *                     Sequence-based parameters:
+      * @param fasta_file   Fasta file of some sample
+      * @param kmer_index   Accumulating kmer index hashtable (see description above)
       * @return (Map[Int, Map[Int, Set[(Int, Int)], Map[Int, Map[Int, (Int, Int)])
       */
     def fetchMinimizers(kmer_size: Int, window_size: Int, debug: Boolean)
@@ -229,8 +230,8 @@ object MinimizerUtils {
         * @return Map[Int, Map[Int,Int]
         **/
       @tailrec def fetchORFMinimizers(_kmer_index: Map[Int, Map[Int, Set[(Int, Int)]]],
-                              _nodeinfo_map: Map[Int, Map[Int, (Int, Int)]]
-                             ): (Map[Int, Map[Int, Set[(Int, Int)]]], Map[Int, Map[Int, (Int, Int)]]) = {
+                                      _nodeinfo_map: Map[Int, Map[Int, (Int, Int)]]
+                                     ): (Map[Int, Map[Int, Set[(Int, Int)]]], Map[Int, Map[Int, (Int, Int)]]) = {
         if (!fasta_iterator.hasNext) (_kmer_index, _nodeinfo_map)
         else {
           //get current orf
@@ -268,11 +269,12 @@ object MinimizerUtils {
 
       /**
         * Tail-recursive method as above but to get intergenic sequence minimizers
+        *
         * @param _kmer_index
         * @return (Map[Int, Map[Int, Set[(Int, Int)], Map[Int, Map[Int, (Int, Int)])
         */
       @tailrec def fetchIntergenicMinimizers(_kmer_index: Map[Int, Map[Int, Set[(Int, Int)]]]
-                                   ): (Map[Int, Map[Int, Set[(Int, Int)]]], Map[Int, Map[Int, (Int, Int)]]) = {
+                                            ): (Map[Int, Map[Int, Set[(Int, Int)]]], Map[Int, Map[Int, (Int, Int)]]) = {
         if (!fasta_iterator.hasNext) (_kmer_index, Map())
         else {
           //get current orf
@@ -284,11 +286,12 @@ object MinimizerUtils {
           //update UNIQUE minimizers; note: a hashvalue can belong to multiple minimizers
           fetchIntergenicMinimizers(
             getMinimizers(kmer_size, window_size, encodeSequence(inter_seq), inter_seq.size)
-            .foldLeft(_kmer_index)((b,a) => b + (a.hashvalue -> Map())))
+              .foldLeft(_kmer_index)((b, a) => b + (a.hashvalue -> Map())))
         }
       }
       //call appropriate method when dealing with orfs or intergenic sequences
-      if(node_map.isEmpty) fetchIntergenicMinimizers(kmer_index) else fetchORFMinimizers(kmer_index, nodeinfo_map.get)
+      if (node_map.isEmpty) fetchIntergenicMinimizers(kmer_index) else fetchORFMinimizers(kmer_index, nodeinfo_map.get)
     }
   }
+
 }
