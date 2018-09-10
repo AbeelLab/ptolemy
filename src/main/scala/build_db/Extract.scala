@@ -142,7 +142,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
     genomes.foreach { case (sample_name, assembly_file, gff_file) => {
       println(timeStamp + "--" + sample_name)
       //open GFF file, attempt to convert gff line to gff objects, collect non-empty, return those with proper
-      // annotation type
+      // annotation type)
       val annotations = tLines(gff_file).map(x => toGFFLine(x, config.showWarnings))
         .collect{case x if(x.nonEmpty) => x.get}.filter(_.feature == annotation_type)
       if (config.verbose) println(timeStamp + "----Found " + annotations.size + " ORFs")

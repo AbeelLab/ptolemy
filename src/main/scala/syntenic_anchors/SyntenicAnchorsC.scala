@@ -191,8 +191,9 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
     cc_brhs.tasksupport = new ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool(config.maxThreads))
 
     if (config.dump) {
-      val pw_cc = new PrintWriter(config.outputDir + "/ccs.txt")
-      cc_brhs.foreach(cc => pw_cc.println(cc.mkString(",")))
+      val pw_cc = new PrintWriter(config.outputDir + "/ccs.sif")
+      cc_brhs.foreach(nodes =>
+        nodes.foreach(node => pw_cc.print(node + "\tx\t" + nodes.filterNot(_ == node).mkString("\t") + "\n")))
       pw_cc.close
     }
 
@@ -308,11 +309,25 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
       val sequence_orfs = hashmap_Z(native_sequence)
       //index of (potentially) computational start/end ORFs
       val boundaries = boundaries_map(native_sequence)
-      //get index of the given ORF in the seuence of ORFs
-      val orf_index = hashmap_Z_positional(orf_id)
+      //check to see if orf is part of a repeat expansion
+      val repeat = rer.get(orf_id)
+      //get index of the given ORF in the seuence of ORFs. in the case of a repeat expansion, will get left and
+      // right-most indeces
+      val (left_most_index, right_most_index) = {
+        //if orf id is not part of repeat expansion, get the index, right index is -1 (i.e. ignore)
+        if(repeat.isEmpty) {
+          //get index
+          val index = hashmap_Z_positional(orf_id)
+          //return both
+          (index, index)
+        }
+        //orf is is part of repeat expansion, get left and right-most indeces
+        else (hashmap_Z_positional(repeat.get.head), hashmap_Z_positional(repeat.get.last))
+      }
 
       //function to determine whether current orf is at the ends of a sequence based on flanking window parameter
-      def atEnds(): Boolean = config.flankingWindow - orf_index < 0 || config.flankingWindow + orf_index > boundaries._2
+      def atEnds(): Boolean =
+        config.flankingWindow - left_most_index < 0 || config.flankingWindow + right_most_index > boundaries._2
 
       //log messages
       if (config.verbose) {
@@ -321,7 +336,7 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
         println(timeStamp + "Native sequence: " + native_sequence)
         println(timeStamp + "ORF sequence: " + sequence_orfs)
         println(timeStamp + "Boundaries: " + boundaries)
-        println(timeStamp + "ORF index: " + orf_index)
+        println(timeStamp + "ORF index(s): " + (left_most_index, right_most_index))
       }
 
       /**
@@ -335,7 +350,7 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
           //update left sv
           val left = {
             //compute different between current index and current offset
-            val left_index = (orf_index - offset)
+            val left_index = (left_most_index - offset)
             //far enough from the edge, add accordingly
             if (left_index >= 0) Seq(sequence_orfs(left_index)) ++ sv._1
             //need to circularize and add accordingly
@@ -344,7 +359,7 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
           //update right sv
           val right = {
             //same as above
-            val right_index = (orf_index + offset)
+            val right_index = (right_most_index + offset)
             //same as above
             if (boundaries._2 - right_index >= 0) sv._2.:+(sequence_orfs(right_index))
             //same as above
@@ -365,26 +380,26 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
         //calculate the left most offset and potential carryon offset for the right
         val (left_most_offset, right_carryon) = {
           //the difference between the flanking window and the current index
-          val offset = orf_index - config.flankingWindow / 2
+          val offset = left_most_index - config.flankingWindow / 2
           //too close to the edge, add left-most reachable index the rest as carry on for the right
-          if (offset < 0) (orf_index - boundaries._1, offset * -1)
+          if (offset < 0) (left_most_index - boundaries._1, offset * -1)
           //far enough from the edge, add accordinlgy
-          else (config.flankingWindow, 0)
+          else (config.flankingWindow / 2, 0)
         }
         //same as above but for the right
         val (right_most_offset, left_carryon) = {
-          val offset = boundaries._2 - (orf_index + config.flankingWindow / 2)
-          if (offset < 0) (boundaries._2 - orf_index, offset * -1)
-          else (config.flankingWindow, 0)
+          val offset = boundaries._2 - (right_most_index + config.flankingWindow / 2)
+          if (offset < 0) (boundaries._2 - right_most_index, offset * -1)
+          else (config.flankingWindow / 2, 0)
         }
         //functional way to construct general sv:
         //  iterate through left-most offset to 1 and add to sequence
         (1 to (left_most_offset + left_carryon)).reverse.foldLeft(Seq[Int]())((left_sv, offset) => {
-          left_sv.:+(sequence_orfs(orf_index - offset))
+          left_sv.:+(sequence_orfs(left_most_index - offset))
         }) ++
           // iterate from 1 to right-most offset and add to sequence
-          (1 to (left_most_offset + left_carryon)).foldLeft(Seq[Int]())((right_sv, offset) => {
-            right_sv.:+(sequence_orfs(orf_index + offset))
+          (1 to (right_most_offset + right_carryon)).foldLeft(Seq[Int]())((right_sv, offset) => {
+            right_sv.:+(sequence_orfs(right_most_index + offset))
           })
       }
 
@@ -421,25 +436,31 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
       //else proceed to synteny alignment
       else {
         //group by genome
-        val cc_grouped = cc.groupBy(x => hashmap_Y_prime(hashmap_Z_prime(x)))
+        val cc_grouped = cc.groupBy(x => hashmap_Y_prime(hashmap_Z_prime(x))).toList
           //iterate through each genome and set of ORFs
-          .mapValues(group => {
+          //.mapValues(group => {
           //check if group is part of repeat expansion. ASSUMES THAT IF ONE ORF IS AN RER, THAN SO ARE REST
-          val isRepeatExpansion = group.exists(rer.contains(_))
+          //val isRepeatExpansion = group.exists(rer.contains(_))
           //if it's a repeat expansion, arbitraily get on
-          if (isRepeatExpansion) group.take(1) else group
-        })
-        val cc_reduced = cc_grouped.map(_._2).flatten
+          //if (isRepeatExpansion) group.take(1) else group
+        //}).toList
+        //all brhs are unique (no multiple brhs in the same genome)
+        if(cc_grouped.forall(_._2.size == 1))
+          cc.foreach(x => pw_syntenic_anchors.println(x + "\t" + cc.filterNot(_ == x).mkString(",")))
+        else {
+        println(timeStamp + "--Found multiple candidate RBHs. Performing synteny alignment.")
+          println(cc)
         //pairwise comparison of all orfs
         val syntenic_anchors = cc.foldLeft(List[((Int, Int), Int)]())((synteny_scores, subject_orf) => {
           //construct syntenic vectors for current orf
-          val (subject_left_sv, subject_general_sv, subject_right_sv) = getSyntenicVector(subject_orf)
+          val (subject_left_sv, subject_general_sv, subject_right_sv) =  getSyntenicVector(subject_orf)
           //iterate through target orfs
           cc.foldLeft(synteny_scores)((local_synteny_scores, target_orf) => {
             //skip if orfs are from same genome
             if (hashmap_Y_prime(hashmap_Z_prime(subject_orf)) == hashmap_Y_prime(hashmap_Z_prime((target_orf)))) local_synteny_scores
             //calculate synteny score
             else {
+
               //println(subject_orf, target_orf)
               //println((subject_left_sv, subject_general_sv, subject_right_sv))
               //get syntenic vectors of target
@@ -467,7 +488,7 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
         //iterate and output to file
         syntenic_anchors.foreach(x =>
           pw_syntenic_anchors.println(Seq(x, syntenic_anchors.filterNot(_ == x).mkString(",")).mkString("\t")))
-      }
+      }}
     })
     pw_syntenic_anchors.close
     println(timeStamp + "Succesfully completed!")

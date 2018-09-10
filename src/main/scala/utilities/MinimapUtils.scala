@@ -47,7 +47,7 @@ trait MinimapUtils{
       *
       * @return Boolean
       */
-    def isCovered: Array[String] => Boolean = alignment => {
+    def isCovered: (Array[String], Boolean) => Boolean = (alignment, isSelf) => {
       //get maximum size of two sequences
       val max_size = max(alignment(1).toInt, alignment(6).toInt)
       //get alignment block length
@@ -56,7 +56,9 @@ trait MinimapUtils{
       val mapq = alignment(11).toInt
       //get alignment coverage based on max size
       val coverage =  block_length.toDouble / max_size
-      coverage > 0.5 && mapq > 10
+      //determine min mapq on type of alignment
+      val min_mapq = if(isSelf) 0 else 10
+      coverage > 0.5 && mapq >= min_mapq
     }
 
     //command for running minimap2
@@ -81,7 +83,7 @@ trait MinimapUtils{
         //split line
         val alignment = line.split("\t")
         //alignment does not meet sigma and gamma quality thresholds
-        if (!isCovered(alignment)) map
+        if (!isCovered(alignment, self)) map
         else {
           //get current values for query ORF
           val current = map.getOrElse(alignment.head.toInt, Set[Int]())

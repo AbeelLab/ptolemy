@@ -27,7 +27,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                      canonicalQuiver: File = null,
                      reads: File = null,
                      db: File = null,
-                     kmerSize: Int = 11,
+                     kmerSize: Int = 15,
                      windowSize: Int = 3,
                      proportion: Double = 0.6,
                      maxError: Double = 0.20,
@@ -70,7 +70,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
       } text ("Maximum number of threads to use (default is 1).")
       opt[Int]('k', "kmer-size") action { (x, c) =>
         c.copy(kmerSize = x)
-      } text ("Size of kmers (default is 11).")
+      } text ("Size of kmers (default is 15).")
       opt[Int]('w', "window-size") action { (x, c) =>
         c.copy(windowSize = x)
       } text ("Size of minimizer window (default is 3).")

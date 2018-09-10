@@ -39,13 +39,10 @@ object BuildIndex extends ReadGFA with PtolemyDB with MMethods {
       note("\nOPTIONAL\n")
       opt[Int]('k', "kmer-size") action { (x, c) =>
         c.copy(kmerSize = x)
-      } text ("Size of kmers (default is 11).")
+      } text ("Size of kmers (default is 15).")
       opt[Int]('w', "window-size") action { (x, c) =>
         c.copy(windowSize = x)
       } text ("Size of minimizer window (default is 3).")
-      opt[Double]("max-frequency") action { (x, c) =>
-        c.copy(maxNodeFreq = x)
-      } text ("Ignore kmers that appear in this .")
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
       }
