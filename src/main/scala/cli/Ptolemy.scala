@@ -20,9 +20,9 @@ object Ptolemy {
         "canonical-quiver             Construct canonical quiver.\n\n" +
         "STRUCTURAL VARIANT CALLING\n" +
         "variant-calling              Identify structural variants as a population using maximally-labelled paths\n\n"+
-        "LONG-READ ALIGNMENT\n" +
+        "LONG-READ ALIGNMENT (EXPERIMENTAL)\n" +
         "index-graph                  Index canonical quiver for long-read alignments.\n" +
-        "align-reads                  Index canonical quiver for long-read alignments.\n\n" +
+        "align-reads                  Align long-reads to canonical quiver.\n\n" +
         "OPTIONAL\n" +
         "run-msa                      Induce MSA across syntenic anchors.\n"
       )
@@ -32,7 +32,7 @@ object Ptolemy {
     } else {
       args(0) match {
         case "extract"             => build_db.Extract.main(args.drop(1))
-        case "syntenic-anchors"    => syntenic_anchors.SyntenicAnchors.main(args.drop(1))
+        case "syntenic-anchors"    => syntenic_anchors.SyntenicAnchorsC.main(args.drop(1))
         case "syntenic-anchorsc"    => syntenic_anchors.SyntenicAnchorsC.main(args.drop(1))
         case "canonical-quiver"    => canonical_quiver.ConstuctCanonicalQuiver.main(args.drop(1))
         case "run-misc"        => misc.msa.RunMSA.main(args.drop(1))
