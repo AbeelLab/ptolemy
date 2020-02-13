@@ -1,3 +1,3 @@
-S288c	./test_data/S288c.chr07.fasta	./test_data/S288c.chr07.gff
-CBS432	./test_data/CBS432.chr07.fasta	./test_data/CBS432.chr07.gff
-SK1	./test_data/SK1.chr07.fasta	./test_data/SK1.chr07.gff
+S288c	./testing_data/S288c.chr07.fasta	./testing_data/S288c.chr07.gff
+CBS432	./testing_data/CBS432.chr07.fasta	./testing_data/CBS432.chr07.gff
+SK1	./testing_data/SK1.chr07.fasta	./testing_data/SK1.chr07.gff
