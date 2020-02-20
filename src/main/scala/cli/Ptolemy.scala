@@ -31,18 +31,14 @@ object Ptolemy {
       println(help)
     } else {
       args(0) match {
-        case "extract"             => build_db.Extract.main(args.drop(1))
-        case "syntenic-anchors"    => syntenic_anchors.SyntenicAnchorsC.main(args.drop(1))
-        case "syntenic-anchorsc"    => syntenic_anchors.SyntenicAnchorsC.main(args.drop(1))
-        case "canonical-quiver"    => canonical_quiver.ConstuctCanonicalQuiver.main(args.drop(1))
-        case "run-misc"        => misc.msa.RunMSA.main(args.drop(1))
-        case "variant-calling"     => variant_calling.StructuralVariantCaller.main(args.drop(1))
-        case "parents"             => misc.parental_perspective.CharacterizeWithParents.main(args.drop(1))
-        case "reverse-complement"  => misc.assembly.ReverseComplement.main(args.drop(1))
-        case "index-graph"         => alignment.BuildIndex.main(args.drop(1))
-        case "align-reads"         => alignment.AlignReads.main(args.drop(1))
-        case "alignment-stats"     => misc.alignment_benchmark.AlignmentAccuracy.main(args.drop(1))
-        case _                     => println(help)
+        case "extract"              => build_db.Extract.main(args.drop(1))
+        case "syntenic-anchors"     => syntenic_anchors.SyntenicAnchorsC.main(args.drop(1))
+        case "syntenic-anchors-old" => syntenic_anchors.SyntenicAnchors.main(args.drop(1))
+        case "canonical-quiver"     => canonical_quiver.ConstuctCanonicalQuiver.main(args.drop(1))
+        case "variant-calling"      => variant_calling.StructuralVariantCaller.main(args.drop(1))
+        case "index-graph"          => alignment.BuildIndex.main(args.drop(1))
+        case "align-reads"          => alignment.AlignReads.main(args.drop(1))
+        case _                      => println(help)
       }
     }
   }

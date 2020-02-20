@@ -95,6 +95,7 @@ object SyntenicAnchors extends tLines with GFFutils with MinimapUtils {
     }
     //get fasta files of orf sequences
     val sequences = config.database.listFiles().filter(_.getName.endsWith("fasta"))
+    println("TEST --- I AM NONCIRCULAR")
     println(timeStamp + "Found " + sequences.size + " genomes in database")
     //obtain hashmap H, brhs for a given ORF
     val hashmap_H = {

@@ -166,7 +166,7 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
         if (get == None) orf + "+" else get.get + "+"
       })
       //output paths
-      pw.println(Seq("P", sequence, orf_to_node_ids.mkString(",")).mkString("\t"))
+      pw.println(Seq("P", sequence, orf_to_node_ids.mkString(","), "*").mkString("\t"))
     })
     openFileWithIterator(path_hashmap_Y).foreach(line => {
       val split = line.split("\t")

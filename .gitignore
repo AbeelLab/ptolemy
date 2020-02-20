@@ -22,3 +22,9 @@
 # Sbt ignore
 target/
 META-INF/
+
+# Misc
+run-ptolemy.sh
+run-ptolemy-single.sh
+test-input.txt
+bin/
