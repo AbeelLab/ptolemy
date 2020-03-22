@@ -28,3 +28,6 @@ run-ptolemy.sh
 run-ptolemy-single.sh
 test-input.txt
 bin/
+
+# temporal output files in root
+/*.out

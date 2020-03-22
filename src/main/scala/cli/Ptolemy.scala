@@ -22,7 +22,7 @@ object Ptolemy {
         "variant-calling              Identify structural variants as a population using maximally-labelled paths\n\n"+
         "LONG-READ ALIGNMENT (EXPERIMENTAL)\n" +
         "index-graph                  Index canonical quiver for long-read alignments.\n" +
-        "align-reads                  Align long-reads to canonical quiver.\n\n" +
+        "align-reads (procedure test TODO)                  Align long-reads to canonical quiver.\n\n" +
         "OPTIONAL\n" +
         "run-msa                      Induce MSA across syntenic anchors.\n"
       )
