@@ -53,8 +53,8 @@ java -jar ptolemy.jar syntenic-anchors --db ptolemy_db -o  .
 java -jar ptolemy.jar canonical-quiver -s syntenic_anchors.txt --db ptolemy_db -o .
 
 #long-read alignment
-java -jar ptolemy.jar index-graph -c canonical_quiver.gfa --db db/
-java -jar ptolemy.jar align-reads -r reads.fa -c canonical_quiver.gfa --db db/ -o . -p alignment
+java -jar ptolemy.jar index-graph -c canonical_quiver.gfa --db ptolemy_db/
+java -jar ptolemy.jar align-reads -r reads.fa -c canonical_quiver.gfa --db ptolemy_db/ -o . -p alignment
 ```
 
 The graph is stored as a [GFA-formatted file](https://github.com/GFA-spec/GFA-spec/blob/master/GFA1.md) and can be visualized via graph-visualizers such as [Bandage](https://rrwick.github.io/Bandage/).

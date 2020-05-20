@@ -62,7 +62,11 @@ object FileHandling {
 
   /**Check whether directory exists and if it is valid. If it does not exist, create it.*/
   def verifyDirectory(inputDir: File, message: String = "The following directory does not exist or it is invalid") {
-    assert(inputDir.exists() && inputDir.isDirectory(), message + ": " + inputDir.getAbsolutePath())
+    if (!(inputDir.exists())) {
+	createDirectory(inputDir)
+    } else {
+	assert(inputDir.exists() && inputDir.isDirectory(), message + ": " + inputDir.getAbsolutePath())
+    }
   }
 
   /**Check whether directory exists and if it is valid. If it does not exist, create it.*/

@@ -5,6 +5,7 @@ import java.io.{File, PrintWriter}
 import atk.FastaIterator
 import utilities.FileHandling.{tLines, timeStamp, verifyDirectory, verifyFile}
 import utilities.{GFFutils, MinimapUtils}
+import utilities.ConfigHandling
 
 import scala.annotation.tailrec
 import scala.collection.immutable.HashMap
@@ -29,6 +30,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
                      useGene: Boolean = true,
                      verbose: Boolean = false
                    )
+
 
   def main(args: Array[String]) {
     val parser = new scopt.OptionParser[Config]("extract") {
@@ -64,6 +66,7 @@ object Extract extends tLines with GFFutils with MinimapUtils {
     }
     parser.parse(args, Config()).map { config =>
       //check whether output directory exists. If not, create it.
+      println(config.outputDir)
       verifyDirectory(config.outputDir)
       verifyFile(config.genomesFile)
       extract(config)
@@ -71,6 +74,27 @@ object Extract extends tLines with GFFutils with MinimapUtils {
   }
 
   def extract(config: Config): Unit = {
+
+	// DATA HANDLING
+
+	// current configuration parameters
+  	val params = ConfigHandling.getConfigParams(config)
+
+
+	// call the function to store the parameters
+	ConfigHandling.saveConfigParams("./testConfigWrite",params)
+
+	// call the function to store the parameters
+	val readParams = ConfigHandling.readConfigParams("./testConfigWrite")
+
+	
+	// get the new combined configuration file
+	val config2 = ConfigHandling.generateConfig(readParams)
+
+	println(config2)
+	println(config)
+	//
+
     //get annotation type
     val annotation_type = if(config.useGene) "gene" else "CDS"
     //open list of genomes

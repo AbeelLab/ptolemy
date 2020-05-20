@@ -10,7 +10,8 @@ libraryDependencies ++= Seq(
   "org.scalatest" %% "scalatest" % "3.0.4" % "test",
   "com.github.scopt" % "scopt_2.12" % "3.7.0",
   "com.sksamuel.avro4s" %% "avro4s-core" % "1.9.0",
-  "io.verizon.quiver" % "core_2.12" % "7.0.18"
+  "io.verizon.quiver" % "core_2.12" % "7.0.18",
+  "org.scala-lang.modules" %% "scala-parser-combinators" % "1.1.2",
 )
 
 // set the main class for packaging the main jar

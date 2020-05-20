@@ -37,11 +37,11 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                      minCoverage: Int = 5,
                      minHits: Int = 1,
                      maxThreads: Int = 1,
-                     verbose: Boolean = false,
+                     verbose: Boolean = true,
                      minGeneLength: Int = -1,
                      prefix: String = null,
                      outputDir: File = null,
-                     debug: Boolean = false,
+//                     debug: Boolean = true,
                    )
 
   def main(args: Array[String]) {
@@ -101,9 +101,9 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
       }
-      opt[Unit]("debug") action { (x, c) =>
-        c.copy(debug = true)
-      }
+      // opt[Unit]("debug") action { (x, c) =>
+      //   c.copy(debug = true)
+      // }
     }
     parser.parse(args, Config()).map { config =>
       //check whether output directory exists. If not, create it.
@@ -123,7 +123,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
 
   def alignReads(config: Config): Unit = {
     //set log level
-    val verbose = config.verbose || config.debug
+    // val verbose = config.verbose || config.debug
     //construct global kmer and node index
     val (global_node_kmer_index, global_inter_kmer_index, global_node_index, global_node_info_index) = {
       //get name of canonical quiver file
@@ -205,8 +205,8 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
         //get current read name, seq size, and minimizers
         val all_read_minimizers = extractReadMinimizers(current_read)
         //set method for predicted the coordinates of a node with configuration parameters
-        val predict_coordinates = predictCoords(current_read.name, config.debug) _
-        if (verbose) println(timeStamp + "Processing read " + current_read.name + " of " + current_read.length + " nt")
+        val predict_coordinates = predictCoords(current_read.name, config.verbose) _
+        if (config.verbose) println(timeStamp + "Processing read " + current_read.name + " of " + current_read.length + " nt")
         //get overlapping nodes and minimizers hits as well as minimizer orphans
         val (node2kmers, minimizer_orphans) = {
           val tmp = all_read_minimizers.foldLeft((Map[Int, Set[Int]](), List[(Int, Int)]())) {
@@ -237,7 +237,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
         val (aligned_nodes, failed_clusters) = {
           val parent_tmp = node2kmers.foldLeft((List[(Int, (Int, Int), Int, Int)](), Set[Int]())) {
             case ((found_nodes, _failed_clusters), (node, kmers)) => {
-              if (verbose) println(timeStamp + "--Processing node " + node + " with " + kmers.size + " kmers")
+              if (config.verbose) println(timeStamp + "--Processing node " + node + " with " + kmers.size + " kmers")
               //get average minimizer set size and seq size for current node
               val (avg_ms, avg_seq_size) = global_node_info_index(node)
               //compute maximum distance threshold
@@ -246,9 +246,9 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
               val (max_dense_cluster, total_clusters) = {
                 //cluster minimizers on the read
                 val tmp = clusterMinimizers(kmers.toSeq.map(all_read_minimizers(_)).flatten.toList,
-                  config.kmerSize, current_read.length, max_dist, config.debug)
-                if (verbose) println(timeStamp + "----Found " + tmp.size + " clusters")
-                if (config.debug)
+                  config.kmerSize, current_read.length, max_dist, config.verbose)
+                if (config.verbose) println(timeStamp + "----Found " + tmp.size + " clusters")
+                if (config.verbose)
                   println(timeStamp + "----Formed the following clusters: " + tmp.map(_.map(_._2).toList.sorted))
                 (if (tmp.isEmpty) Set[(Minimizer, Int)]() else tmp.maxBy(_.size), tmp.size)
               }
@@ -256,7 +256,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
               val cluster_width = (max_dense_cluster.maxBy(_._2)._2 - max_dense_cluster.minBy(_._2)._2) + 1
               //ratio between the size of the cluster and the node
               val size_difference_ratio = min(cluster_width, avg_seq_size).toDouble / max(cluster_width, avg_seq_size)
-              if (verbose) {
+              if (config.verbose) {
                 println(timeStamp + "----Using max dense cluster of " + max_dense_cluster.size + " minimizers")
                 println(timeStamp + "----Cluster length of: " + cluster_width)
                 println(timeStamp + "----Size difference ratio: " + size_difference_ratio)
@@ -265,7 +265,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
               val unique_hits = max_dense_cluster.map(_._1.hashvalue).size
               //get expected number of minimizer hits
               val expected_hits = expectedMinHits(node)
-              if (verbose) println(timeStamp + "----Expected " + expected_hits + "minimizer hits based on mean " +
+              if (config.verbose) println(timeStamp + "----Expected " + expected_hits + "minimizer hits based on mean " +
                 "minimizer set size of " + avg_ms)
               //size ratio is too low
               if (size_difference_ratio < config.lengthProportion) (found_nodes, _failed_clusters)
@@ -312,7 +312,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                   }
                   //get orientation of alignment, this is just to be able to output occurrance map in debug mode
                   val final_orientation = tmp._1.toList.sortBy(-_._2).head._1
-                  if (config.debug) println(timeStamp + "----Orientation map: " + tmp._1)
+                  if (config.verbose) println(timeStamp + "----Orientation map: " + tmp._1)
                   //predict best start/end coordinates
                   val (_start, _end) = predict_coordinates(node, final_orientation, avg_seq_size, tmp._2.sortBy(_._2))
                   //return oreitnation and coords
@@ -320,7 +320,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                 }
                 //move on if could not find reliable coordinates
                 if (start == -1 && end == -1) {
-                  if (config.debug) {
+                  if (config.verbose) {
                     println("----WARNING: Could not find reliable coordinates for read " + current_read.name +
                       " during alignment with node " + node + " using max dense cluster of " + max_dense_cluster +
                       ". Skipping node alignment")
@@ -328,7 +328,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                   (found_nodes, max_dense_cluster.foldLeft(_failed_clusters)((b, a) => b + (a._2)))
                 }
                 else {
-                  if (verbose) {
+                  if (config.verbose) {
                     println(timeStamp + "----Node is alignable.")
                     println(timeStamp + "----Node has an average size of: " + avg_seq_size)
                     println(timeStamp + "----Predicted start/end coordinates: " + (start, end))
@@ -343,18 +343,18 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
         }
         //if read is unmapped
         if (aligned_nodes.isEmpty) {
-          if (verbose) println(timeStamp + "--No alignments found")
+          if (config.verbose) println(timeStamp + "--No alignments found")
           pw.println("P" + "\t" + current_read.name + "\t\t" + current_read.length + "M")
         }
         //read is mapped
         else {
-          if (config.debug) println(timeStamp + "Found the following alignment: " + aligned_nodes)
+          if (config.verbose) println(timeStamp + "Found the following alignment: " + aligned_nodes)
           //curate alignments by identifying ambiguous alignments and processing unaligned regions
           val curated_alignments = {
             //get initial curated alignments containing ambiugous alignemnts
             val tmp = curateAlignments(aligned_nodes, current_read.length,
               (smallest_gene * 0.8).toInt, average_kmer_set_size_ratio)
-            if (config.debug) println(timeStamp + "Initial curated alignment: " + tmp)
+            if (config.verbose) println(timeStamp + "Initial curated alignment: " + tmp)
             //iterate through each alignment and process unaligned regions
             tmp.filter(alignment =>
               //alignment is not an unaligned region, retain
@@ -390,14 +390,14 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
             if (orientation == '-') tmp.reverse.map(_.reverse)
             else tmp
           }
-          if (config.debug) {
+          if (config.verbose) {
             println(timeStamp + "Curated alignment: " + curated_alignments)
             println(timeStamp + "Split alignments: " + max_contiguous_alignments)
             //unaligned.foreach(region => println(region, failed_clusters.filter(x => region._1 <= x && region._2 >=x).size))
           }
           //create alignment string for each max contiguous alignment
           val aligned_structure = max_contiguous_alignments.map(_.map(_._1 + "+").mkString(","))
-          if (verbose) println(timeStamp + "--Found the following alignment(s): " + aligned_structure.mkString(";"))
+          if (config.verbose) println(timeStamp + "--Found the following alignment(s): " + aligned_structure.mkString(";"))
           //read is unmapped
           if (max_contiguous_alignments.forall(_.isEmpty))
             pw.println("P" + "\t" + current_read.name + "\t\t" + current_read.length + "M")

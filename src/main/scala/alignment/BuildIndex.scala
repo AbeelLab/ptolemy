@@ -22,10 +22,10 @@ object BuildIndex extends ReadGFA with PtolemyDB with MMethods {
   case class Config(
                      canonicalQuiver: File = null,
                      db: File = null,
-                     kmerSize: Int = 11,
+                     kmerSize: Int = 15,
                      windowSize: Int = 3,
                      maxNodeFreq: Double = 0.01,
-                     verbose: Boolean = false
+                     verbose: Boolean = true,
                    )
 
   def main(args: Array[String]) {
