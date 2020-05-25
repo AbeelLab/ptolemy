@@ -5,6 +5,7 @@ import java.io.{File, PrintWriter}
 import utilities.FileHandling.{verifyDirectory, verifyFile, timeStamp}
 import utilities.GFAutils.ConstructGFA
 import utilities.HLGG
+import utilities.ConfigHandling
 
 import scala.annotation.tailrec
 import scala.collection.immutable.HashSet
@@ -21,27 +22,28 @@ import scala.collection.immutable.HashSet
 
 object ReferenceGraphPartitioning extends ConstructGFA {
 
-  case class Config(
-                     hlgg: File = null,
-                     outputDir: File = null,
-                     reference: String = null,
-                     verbose: Boolean = false,
-                     dump: Boolean = false
-                   )
+//  case class Config(
+//                     hlgg: File = null,
+//                     outputDir: File = null,
+//                     reference: String = null,
+//                     verbose: Boolean = false,
+//                     dump: Boolean = false
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("construct-hlgg") {
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("construct-hlgg") {
       opt[File]('h', "hlgg-gfa") required() action { (x, c) =>
         c.copy(hlgg = x)
       } text ("GFA file of the HLGG.")
       opt[File]('o', "output-directory") required() action { (x, c) =>
         c.copy(outputDir = x)
       } text ("Output directory.")
-      opt[String]("reference") required() action { (x, c) =>
+      opt[File]("reference") required() action { (x, c) =>
         c.copy(reference = x)
       } text ("Reference genome. This is used to define a 'natural-flow' of a quiver which is then used to identify " +
         "all structural variants that deviate from it.")
-      note("\nOPTIONAL\n")
+      note("\nOPTIONAL FLAGS")
       opt[Unit]("dump") action { (x, c) =>
         c.copy(dump = true)
       }
@@ -50,27 +52,30 @@ object ReferenceGraphPartitioning extends ConstructGFA {
       }
 
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.outputDir)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "construct-hlgg")
+      //check whether hlgg file exists prior to partition
       verifyFile(config.hlgg)
       partitionGraph(config)
     }
   }
 
-    def partitionGraph(config: Config): Unit = {
+    def partitionGraph(config: ConfigHandling.fullConfig): Unit = {
       println("Loading canonical quiver" + timeStamp)
       //load HLGG from given GFA file
       val hlgg = new HLGG(config.hlgg)
       //extract map containing reference sequence identifier and the corresponding arrows in positional order
-      val ref_arrows = hlgg.sequence_set.filter(_._1.contains(config.reference))
+      val ref_arrows = hlgg.sequence_set.filter(_._1.contains(config.reference.toString))
       assert(!ref_arrows.isEmpty, "Could not find reference genome containing the follownig substring: " + config
-        .reference)
+        .reference.toString)
       //create a hashset containig all nodes element of the reference genome
       val ref_nodes = ref_arrows.flatMap(_._2).foldLeft(HashSet[Int]())((set, node) => set + node)
       //create hashset containing all sequence identifiers of the reference
       val ref_labels = ref_arrows.map(_._1).foldLeft(HashSet[String]())((set, label) => set + label)
-      println("Using " + config.reference + " genome architecture as reference" + timeStamp)
+      println("Using " + config.reference.toString + " genome architecture as reference" + timeStamp)
 
       /**
         * Method to identify and return all connected components in a quiver graph. Starting from some root, performs

@@ -6,10 +6,11 @@ import utilities.FileHandling._
 import utilities.NumericalUtils.min
 import utilities.{GFFutils, MinimapUtils}
 import utilities.GraphUtils.getConnectedComponents
+import utilities.ConfigHandling
 import atk.Tool.progress
+
 import scala.collection.immutable.HashMap
 import scala.collection.parallel.ForkJoinTaskSupport
-
 
 /**
   * Author: Alex N. Salazar
@@ -20,70 +21,74 @@ import scala.collection.parallel.ForkJoinTaskSupport
   */
 object SyntenicAnchorsC extends GFFutils with MinimapUtils {
 
-  case class Config(
-                     database: File = null,
-                     outputDir: File = null,
-                     gamma: Double = 0.75,
-                     flankingWindow: Int = 10,
-                     verbose: Boolean = false,
-                     mergeCC: Boolean = false,
-                     dump: Boolean = false,
-                     syntenicFraction: Double = 0.5,
-                     kmerSize: Int = 11,
-                     minimizerWindow: Int = 3,
-                     isCircular: Boolean = false,
-                     mergeSingleBRH: Boolean = false,
-                     maxThreads: Int = 1,
-                     brh: File = null
-                   )
+//  case class Config(
+//                     database: File = null,
+//                     outputDir: File = null,
+//                     gamma: Double = 0.75,
+//                     flankingWindow: Int = 10,
+//                     verbose: Boolean = false,
+//                     mergeCC: Boolean = false,
+//                     dump: Boolean = false,
+//                     syntenicFraction: Double = 0.5,
+//                     kmerSize: Int = 11,
+//                     minimizerWindow: Int = 3,
+//                     isCircular: Boolean = false,
+//                     maxThreads: Int = 1,
+//                     brh: File = null
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("syntenic-anchors") {
-      opt[File]("db") required() action { (x, c) =>
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("syntenic-anchors") {
+      opt[File]('d',"db") required() action { (x, c) =>
         c.copy(database = x)
-      } text ("Directory path of database (e.g. output directory of 'extract' module).")
+      } text ("\n"+" "*27+"Directory path of database (i.e. output-directory used "+
+      "\n"+" "*27+"for the 'extract' module)")
       opt[File]('o', "output-directory") required() action { (x, c) =>
         c.copy(outputDir = x)
-      } text ("Output directory.")
-      note("\nOPTIONAL: SYNTENY PARAMETERS\n")
-      opt[Unit]("circular") action { (x, c) =>
-        c.copy(isCircular = true)
-      } text ("Genome can be circular (default is false).")
+      } text ("Output directory for 'syntenic-anchors' module")
+      note("\nOPTIONAL FLAGS")
+//      opt[Unit]("circular") action { (x, c) =>
+//        c.copy(isCircular = true)
+//      } text ("Genome can be circular (default is false).")
       opt[Int]('f', "flanking-window") action { (x, c) =>
         c.copy(flankingWindow = x)
-      } text ("Flanking window (default is 10).")
+      } text ("Flanking window (default is "+defaultValues.flankingWindow+")")
       opt[Unit]("merge-ccs") action { (x, c) =>
         c.copy(mergeCC = true)
-      } text ("Skip synteny alignment and directly merge connected components of BRHs as syntenic anchors.")
+      } text ("\n"+" "*27+"Skip synteny alignment and directly merge connected \n"+
+        " "*27+"components of BRHs as syntenic anchors (default is "+defaultValues.mergeCC+")")
       opt[File]("brhs") action { (x, c) =>
         c.copy(brh = x)
-      } text ("If BRHs file already exists, provide it here to skip pairwise-ORF alignments.")
+      } text ("\n"+" "*27+"If BRHs file already exists, provide it here to skip \n"+
+        " "*27+"pairwise-ORF alignments.")
+      opt[Unit]("dump") action { (x, c) =>
+        c.copy(dump = true)
+      } text ("\n"+" "*27+"Write intermediate tables to disk ("+defaultValues.dump+" by default)")
+      opt[Unit]("verbose") action { (x, c) =>
+        c.copy(verbose = true)
+      } text("\n"+" "*27+"Display extra process information (default is "+ defaultValues.verbose+")")
       note("\nOPTIONAL: ALIGNMENT PARAMETERS\n")
       opt[Int]('t', "threads") action { (x, c) =>
         c.copy(maxThreads = x)
-      } text ("Maximum number of threads to use (default is 1).")
+      } text ("\n"+" "*27+"Maximum number of threads to use (default is "+defaultValues.maxThreads+")")
       opt[Int]("kmer-size") action { (x, c) =>
         c.copy(kmerSize = x)
-      } text ("Kmer sizer used during alignment (default is 11).")
+      } text ("\n"+" "*27+"k-mer size used during alignment (default is "+defaultValues.kmerSize+")")
       opt[Int]("minimizer-window") action { (x, c) =>
         c.copy(minimizerWindow = x)
-      } text ("Minimizer window size (default is 3).")
-      opt[Unit]("dump") action { (x, c) =>
-        c.copy(dump = true)
-      } text ("Will write intermediate tables to disk (turned off by default).")
-      opt[Unit]("verbose") action { (x, c) =>
-        c.copy(verbose = true)
-      } text ("Additional log messages.")
-
+      } text ("Minimizer window size (default is "+defaultValues.minimizerWindow+")")
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.database)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "syntenic-anchors")
       syntenicAnchorsC(config)
     }
   }
 
-  def syntenicAnchorsC(config: Config) = {
+  def syntenicAnchorsC(config: ConfigHandling.fullConfig) = {
     //get all files in database
     val database = config.database.listFiles()
     //fetch all hashtables and repeat expansions:
@@ -119,7 +124,7 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
     //  multiple sequences
     val hashmap_H = {
       //for when the user specified BRH file
-      if (config.brh != null) {
+      if (config.brh.toString != "null") {
         println(timeStamp + "User specified BRHs file. Constructing hashmap H from file.")
         verifyFile(config.brh)
         //iterate through file and create hashmap
@@ -174,7 +179,7 @@ object SyntenicAnchorsC extends GFFutils with MinimapUtils {
       }
     }
     //create brhs file if not provided
-    if (config.brh == null) {
+    if (config.brh.toString == "null") {
       //output file for BRHs; note currently overrides original BRH file
       val pw_brhs = new PrintWriter(config.outputDir + "/brhs.txt")
       hashmap_H.foreach { case (orf, brhs) => pw_brhs.println(Seq(orf, brhs.mkString(",")).mkString("\t")) }

@@ -4,6 +4,7 @@ import java.io.{File, PrintWriter}
 
 import utilities.FileHandling.{openFileWithIterator, timeStamp, verifyDirectory}
 import utilities.GFAutils.{ConstructGFA}
+import utilities.ConfigHandling
 
 import scala.collection.immutable.{HashMap, HashSet}
 
@@ -16,50 +17,55 @@ import scala.collection.immutable.{HashMap, HashSet}
   */
 object ConstuctCanonicalQuiver extends ConstructGFA {
 
-  case class Config(
-                     syntenicAnchors: File = null,
-                     database: File = null,
-                     outputDir: File = null,
-                     verbose: Boolean = false,
-                     msa: Boolean = false,
-                     isCircular: Boolean = false,
-                     dump: Boolean = false
-                   )
+//  case class Config(
+//                     syntenicAnchors: File = null,
+//                     database: File = null,
+//                     outputDir: File = null,
+//                     verbose: Boolean = false,
+//                     msa: Boolean = false,
+//                     isCircular: Boolean = false,
+//                     dump: Boolean = false
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("canonical-quiver") {
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("canonical-quiver") {
       opt[File]('s', "syntenic-anchors") required() action { (x, c) =>
         c.copy(syntenicAnchors = x)
-      } text ("Path to file containing syntenic anchors.")
-      opt[File]("db") required() action { (x, c) =>
+      } text ("Path to file containing syntenic anchors")
+      opt[File]('d',"db") required() action { (x, c) =>
         c.copy(database = x)
-      } text ("Directory path of database (e.g. output directory of 'extract' module).")
+      } text ("\n"+" "*27+"Directory path of database (i.e. output-directory used "+
+      "\n"+" "*27+"for the 'extract' module)")
       opt[File]('o', "output-directory") required() action { (x, c) =>
         c.copy(outputDir = x)
-      } text ("Output directory.")
-      note("\nOPTIONAL\n")
-      opt[Unit]("circular") action { (x, c) =>
-        c.copy(isCircular = true)
-      } text ("Genome can be circular (default is false).")
+      } text ("Output directory")
+      note("\nOPTIONAL FLAGS")
+//      opt[Unit]("circular") action { (x, c) =>
+//        c.copy(isCircular = true)
+//      } text ("Genome can be circular (default is false)")
       opt[Unit]("msa-groups") action { (x, c) =>
         c.copy(msa = true)
-      } text ("Turn on to output file of syntenic anchors to database for inducing MSA in each syntenic anchor.")
+      } text ("\n"+" "*27+"Turn on to output file of syntenic anchors to database"+
+        "\n"+" "*27+"for inducing Multiple-Sequence-Alignment in each"+
+        "\n"+" "*27+"syntenic anchor ("+defaultValues.msa+" by default)")
       opt[Unit]("dump") action { (x, c) =>
         c.copy(dump = true)
-      }
+      } text ("\n"+" "*27+"Write intermediate tables to disk ("+defaultValues.dump+" by default)")
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
-      }
-
+      } text("\n"+" "*27+"Display extra process information (default is "+ defaultValues.verbose+")")
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.database)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "canonical-quiver")
       constructHLGG(config)
     }
   }
 
-  def constructHLGG(config: Config): Unit = {
+  def constructHLGG(config: ConfigHandling.fullConfig): Unit = {
     println(timeStamp + "Fetching hashmap Z")
     val path_hashmap_Z = config.database.listFiles().find(_.getName == "global_z.txt").get
     val path_hashmap_Y = config.database.listFiles().find(_.getName == "global_y.txt").get

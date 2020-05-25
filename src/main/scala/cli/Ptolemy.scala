@@ -16,16 +16,17 @@ object Ptolemy {
     val help = (
       "Usage: java -jar ptolemy.jar [module]\n\n" +
         "CANONICAL QUIVER CONSTRUCTION\n" +
-        "extract                      Run Ptolemy's extract module\n"+
-        "syntenic-anchors             Compute syntenic anchors from pairwise ORF alignments\n"+
-        "canonical-quiver             Construct canonical quiver\n\n" +
+        "extract                    Run Ptolemy's extract module\n"+
+        "syntenic-anchors           Compute syntenic anchors from pairwise ORF alignments\n"+
+        "canonical-quiver           Construct canonical quiver\n\n" +
         "STRUCTURAL VARIANT CALLING\n" +
-        "variant-calling              Identify structural variants as a population using maximally-labelled paths\n\n"+
+        "variant-calling            Identify structural variants as a population using\n"+
+        "                           maximally-labelled paths\n\n"+
         "LONG-READ ALIGNMENT\n" +
-        "index-graph                  Index canonical quiver for long-read alignments\n" +
-        "align-reads                  Align long-reads to canonical quiver\n\n" +
-        "OPTIONAL\n" +
-        "run-msa                      Induce MSA across syntenic anchors\n"
+        "index-graph                Index canonical quiver for long-read alignments\n" +
+        "align-reads                Align long-reads to canonical quiver\n\n"
+        //"OPTIONAL\n" +
+        //"run-msa                    Induce MSA across syntenic anchors\n"
       )
 
     if (args.length == 0) {

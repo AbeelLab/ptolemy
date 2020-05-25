@@ -18,96 +18,108 @@ import utilities.MinimizerUtils.{MMethods, Minimizer}
 import utilities.ReadAlignmentUtils
 import utilities.GFAutils.ReadGFA
 import utilities.NumericalUtils.{max, min}
+import utilities.ConfigHandling
 
 import scala.collection.parallel.ForkJoinTaskSupport
 
 object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods with ReadAlignmentUtils {
 
-  case class Config(
-                     canonicalQuiver: File = null,
-                     reads: File = null,
-                     db: File = null,
-                     kmerSize: Int = 15,
-                     windowSize: Int = 3,
-                     proportion: Double = 0.6,
-                     maxError: Double = 0.20,
-                     chunkSize: Int = 30000,
-                     minReadLength: Int = 500,
-                     lengthProportion: Double = 0.3,
-                     minCoverage: Int = 5,
-                     minHits: Int = 1,
-                     maxThreads: Int = 1,
-                     verbose: Boolean = true,
-                     minGeneLength: Int = -1,
-                     prefix: String = null,
-                     outputDir: File = null,
-//                     debug: Boolean = true,
-                   )
+//  case class Config(
+//                     canonicalQuiver: File = null,
+//                     reads: File = null,
+//                     database: File = null,
+//                     kmerSize: Int = 15,
+//                     windowSize: Int = 3,
+//                     proportion: Double = 0.6,
+//                     maxError: Double = 0.20,
+//                     chunkSize: Int = 30000,
+//                     minReadLength: Int = 500,
+//                     lengthProportion: Double = 0.3,
+//                     minCoverage: Int = 5,
+//                     minHits: Int = 1,
+//                     maxThreads: Int = 1,
+//                     verbose: Boolean = true,
+//                     minGeneLength: Int = -1,
+//                     prefix: String = null,
+//                     outputDir: File = null,
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("align-reads") {
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("align-reads") {
       opt[File]('r', "reads") required() action { (x, c) =>
         c.copy(reads = x)
-      } text ("Reads in FASTA, FASTQ, or gzipped-FASTQ format (detects automatically based on extension).")
+      } text ("\n"+" "*27+"Reads in FASTA, FASTQ, or gzipped-FASTQ format \n"+
+        " "*27+"(format is detected automatically based on extension)")
       opt[File]('c', "canonical-quiver") required() action { (x, c) =>
         c.copy(canonicalQuiver = x)
-      } text ("Output directory for database to be stored.")
-      opt[File]("db") required() action { (x, c) =>
-        c.copy(db = x)
-      } text ("Directory path of database (e.g. output directory of 'extract' module).")
+      } text ("Path to canonical quiver in GFA-format")
+      opt[File]('d',"db") required() action { (x, c) =>
+        c.copy(database = x)
+      } text ("\n"+" "*27+"Directory path of database (i.e. output-directory used "+
+        "\n"+" "*27+"for the 'extract' module)")
       opt[File]('o', "output-directory") required() action { (x, c) =>
         c.copy(outputDir = x)
-      } text ("Output directory for database to be stored.")
+      } text ("Output directory for database to be stored")
       opt[String]('p', "prefix") required() action { (x, c) =>
         c.copy(prefix = x)
-      } text ("Prefix for output file.")
-      note("\nOPTIONAL\n")
+      } text ("\n"+" "*27+"String to set as prefix for output file")
+      note("\nOPTIONAL FLAGS")
       opt[Int]("read-length") action { (x, c) =>
         c.copy(minReadLength = x)
-      } text ("Minimum read length (default is 500). Only read length of at least this size are processed.")
+      } text ("\n"+" "*27+"Minimum read length: only reads of at least this size\n"+
+        " "*27+"are processed (default is "+defaultValues.minReadLength+")")
       opt[Int]('t', "threads") action { (x, c) =>
         c.copy(maxThreads = x)
-      } text ("Maximum number of threads to use (default is 1).")
+      } text ("\n"+" "*27+"Maximum number of threads to use (default is "+defaultValues.maxThreads+")")
       opt[Int]('k', "kmer-size") action { (x, c) =>
         c.copy(kmerSize = x)
-      } text ("Size of kmers (default is 15).")
+      } text ("\n"+" "*27+"k-mer size used during alignment (default is "+defaultValues.kmerSize+")")
       opt[Int]('w', "window-size") action { (x, c) =>
         c.copy(windowSize = x)
-      } text ("Size of minimizer window (default is 3).")
+      } text ("Minimizer window size (default is "+defaultValues.minimizerWindow+")")
       opt[Double]('e', "max-error") action { (x, c) =>
         c.copy(maxError = x)
-      } text ("Maximum tolerable error for a read (default is 0.2). This influences the expected jaccard index " +
-        "between a read and node.")
-      opt[Double]('d', "distance-proportion") action { (x, c) =>
+      } text ("\n"+" "*27+"Maximum tolerable error for a read, which influences the \n"+
+        " "*27+"expected Jaccard index value between a read and node \n"+
+        " "*27+"(default value is "+defaultValues.maxError+")")
+      opt[Double]("distance-proportion") action { (x, c) =>
         c.copy(proportion = x)
-      } text ("ORF proportion for maximum distance allowed between two minimizers during clustering. This is " +
-        "based on the the size of an ORF. For example, given distance proportion, d, and size of an ORF, l, then the " +
-        "max distance is: d*l.")
+      } text ("Open-Reading-Frame proportion for maximum distance allowed \n"+
+        " "*27+"between two minimizers during clustering. This is based on\n"+
+        " "*27+"the the size of an ORF, e.g. given distance proportion (d)\n"+
+        " "*27+"and size of an ORF (l) then the maximum distance is (d*l)\n"+
+        " "*27+"(default value for the distance-proportion is "+defaultValues.proportion+")")
       opt[Double]('l', "length-ratio") action { (x, c) =>
         c.copy(lengthProportion = x)
-      } text ("Maximum tolerable ratio between the the length of cluster and the size of a node (default is 0.3)")
+      } text ("Maximum tolerable ratio between the the length of cluster \n"+
+        " "*27+"and the size of a node (default is "+defaultValues.lengthProportion+")")
       opt[Int]("min-hits") action { (x, c) =>
         c.copy(minHits = x)
-      } text ("Minimum number of minimizer hits for candidate node alignments (default is 3).")
+      } text ("\n"+" "*27+"Minimum number of minimizer hits for candidate node\n"+
+        " "*27+"alignments (default is "+defaultValues.minHits+")")
       opt[Int]("annotation-length") action { (x, c) =>
         c.copy(minGeneLength = x)
-      } text ("Overwrite smallest observed annotation in the population to this value.")
+      } text ("Overwrite smallest observed annotation in the population\n"+
+        " "*27+"to this value (default is "+defaultValues.minGeneLength+", taking the smallest annotation\n"+
+        " "*27+"within the population)")
       opt[Int]("min-coverage") action { (x, c) =>
         c.copy(minCoverage = x)
-      } text ("Only report nodes and edges with at least this amount of coverage (default is 5).")
+      } text ("\n"+" "*27+"Only report nodes and edges with at least this amount of\n"+
+        " "*27+"coverage (default is "+defaultValues.minCoverage+")")
       opt[Int]("chunk-size") action { (x, c) =>
         c.copy(chunkSize = x)
-      } text ("Number of reads to load at a time(default is 30000).")
+      } text ("\n"+" "*27+"Number of reads to load at a time (default is "+defaultValues.chunkSize+")")
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
-      }
-      // opt[Unit]("debug") action { (x, c) =>
-      //   c.copy(debug = true)
-      // }
+      } text("\n"+" "*27+"Display extra process information (default is "+ defaultValues.verbose+")")
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.db)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "align-reads")
+      //check whether quiver and reads exist prior to runing the alignment
       verifyFile(config.canonicalQuiver)
       verifyFile(config.reads)
       alignReads(config)
@@ -121,7 +133,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
     */
   def expectedJI: (Double, Int) => Double = (error, kmer_size) => 1 / (2 * Math.pow(Math.E, (error * kmer_size)) - 1)
 
-  def alignReads(config: Config): Unit = {
+  def alignReads(config: ConfigHandling.fullConfig): Unit = {
     //set log level
     // val verbose = config.verbose || config.debug
     //construct global kmer and node index

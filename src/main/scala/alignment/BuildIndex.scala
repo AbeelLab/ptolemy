@@ -16,46 +16,52 @@ import utilities.FileHandling.{timeStamp, verifyDirectory, verifyFile, getFileNa
 import utilities.GFAutils.ReadGFA
 import utilities.DatabaseUtils.PtolemyDB
 import utilities.MinimizerUtils.MMethods
+import utilities.ConfigHandling
 
 object BuildIndex extends ReadGFA with PtolemyDB with MMethods {
 
-  case class Config(
-                     canonicalQuiver: File = null,
-                     db: File = null,
-                     kmerSize: Int = 15,
-                     windowSize: Int = 3,
-                     maxNodeFreq: Double = 0.01,
-                     verbose: Boolean = true,
-                   )
+//  case class Config(
+//                     canonicalQuiver: File = null,
+//                     database: File = null,
+//                     kmerSize: Int = 15,
+//                     windowSize: Int = 3,
+//                     // maxNodeFreq: Double = 0.01, // unused variable!
+//                     verbose: Boolean = true,
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("build-index") {
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("build-index") {
       opt[File]('c', "canonical-quiver") required() action { (x, c) =>
         c.copy(canonicalQuiver = x)
-      } text ("Path to canonical quiver in GFA-format.")
-      opt[File]("db") required() action { (x, c) =>
-        c.copy(db = x)
-      } text ("Directory path of database (e.g. output directory of 'extract' module).")
-      note("\nOPTIONAL\n")
+      } text ("Path to canonical quiver in GFA-format")
+      opt[File]('d',"db") required() action { (x, c) =>
+        c.copy(database = x)
+      } text ("\n"+" "*27+"Directory path of database (i.e. output-directory used "+
+      "\n"+" "*27+"for the 'extract' module)")
+      note("\nOPTIONAL FLAGS")
       opt[Int]('k', "kmer-size") action { (x, c) =>
         c.copy(kmerSize = x)
-      } text ("Size of kmers (default is 15).")
+      } text ("\n"+" "*27+"Kmer sizer used during alignment (default is "+defaultValues.kmerSize+")")
       opt[Int]('w', "window-size") action { (x, c) =>
         c.copy(windowSize = x)
-      } text ("Size of minimizer window (default is 3).")
+      } text ("Minimizer window size (default is "+defaultValues.minimizerWindow+")")
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
-      }
+      } text("\n"+" "*27+"Display extra process information (default is "+ defaultValues.verbose+")")
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.db)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "index-graph")
+      //check whether canonical quiver exists prior to runing the indexing
       verifyFile(config.canonicalQuiver)
       buildIndex(config)
     }
   }
 
-  def buildIndex(config: Config): Unit = {
+  def buildIndex(config: ConfigHandling.fullConfig): Unit = {
     println(timeStamp + "Loading canonical quiver")
     //load all nodes in the canonical quiver
     val gfa_nodes = loadNodesGFA(config.canonicalQuiver)
@@ -63,7 +69,7 @@ object BuildIndex extends ReadGFA with PtolemyDB with MMethods {
     println(timeStamp + "Loading ORF ID to node ID schema")
     //create map from orf ID to node IDs
     val orfid2nodeid = {
-      val tmp = loadORFid2Nodeid(config.db)
+      val tmp = loadORFid2Nodeid(config.database)
       //get all found node IDs
       val found_nodeids = tmp.map(_._2).toSet
       //sanity checks
@@ -80,7 +86,7 @@ object BuildIndex extends ReadGFA with PtolemyDB with MMethods {
     // orf id -> (avg minimizer setsize, avg sequence size)
     val (global_kmer_index, global_nodeinfo) = {
       //fetch all ORF sequences files
-      config.db.listFiles().filter(_.getName.endsWith("orfs.sequences.fasta"))
+      config.database.listFiles().filter(_.getName.endsWith("orfs.sequences.fasta"))
         //iterate through each one and update kmer index (Map[kmer -> Map[Node, starting positions]])
         .foldLeft((Map[Int, Map[Int, Set[(Int, Int)]]](), Map[Int, Map[Int, (Int, Int)]]())) {
         case ((kmer_index, nodeinfo), _fasta) =>
@@ -109,7 +115,7 @@ object BuildIndex extends ReadGFA with PtolemyDB with MMethods {
     println(timeStamp + "Creating global kmer index for intergenic sequences")
     //creartea global kmer index but for intergenic sequences
     val global_inter_kmer_index = {
-      val tmp = config.db.listFiles().filter(_.getName.endsWith("intergenic.sequences.fasta"))
+      val tmp = config.database.listFiles().filter(_.getName.endsWith("intergenic.sequences.fasta"))
         //iterate through each one and update kmer index (Map[kmer -> Map[Node, starting positions]])
         .foldLeft((Map[Int, Map[Int, Set[(Int, Int)]]](), Map[Int, Map[Int, (Int, Int)]]())) {
         //call for fetching minimizers from intergenic sequences
@@ -123,7 +129,7 @@ object BuildIndex extends ReadGFA with PtolemyDB with MMethods {
     val name = getFileName(config.canonicalQuiver)
     //fetch parent directory
     val parent_directory = getParentDirectory(config.canonicalQuiver)
-    //create output files for db indeces
+    //create output files for database indeces
     val pw_nki = new PrintWriter(parent_directory + "/" + name + ".nki")
     val pw_nki_distribution = new PrintWriter(parent_directory + "/" + name + ".nkid")
     val pw_iki = new PrintWriter(parent_directory + "/" + name + ".iki")

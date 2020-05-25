@@ -57,6 +57,7 @@ object FileHandling {
   /**Create directory and verify that it now exists*/
   def createDirectory(inputDir: File, message: String = "Could not create the following directory") {
     inputDir.mkdir()
+    println(timeStamp + "Created directory " + inputDir.getAbsolutePath)
     verifyDirectory(inputDir, message)
   }
 
@@ -70,7 +71,7 @@ object FileHandling {
   }
 
   /**Check whether directory exists and if it is valid. If it does not exist, create it.*/
-  def verifyFile(inputFile: File, message: String = "The following directory does not exist or it is invalid") {
+  def verifyFile(inputFile: File, message: String = "The following file does not exist or it is invalid") {
     assert(inputFile.exists() && inputFile.isFile(), message + ": " + inputFile.getAbsolutePath())
   }
 

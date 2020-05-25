@@ -6,6 +6,7 @@ import utilities.FileHandling.timeStamp
 import utilities.FileHandling.{openFileWithIterator, tLines, verifyDirectory, verifyFile}
 import utilities.GFFutils
 import utilities.MinimapUtils
+import utilities.ConfigHandling
 
 import scala.collection.immutable.{HashMap, HashSet}
 import atk.Tool.progress
@@ -22,29 +23,30 @@ import scala.annotation.tailrec
   */
 object SyntenicAnchors extends tLines with GFFutils with MinimapUtils {
 
-  case class Config(
-                     database: File = null,
-                     outputDir: File = null,
-                     gamma: Double = 0.75,
-                     f: Int = 10,
-                     verbose: Boolean = false,
-                     dump: Boolean = false,
-                     syntenicFraction: Double = 0.5,
-                     kmerSize: Int = 11,
-                     minimizerWindow: Int = 5,
-                     brh: File = null,
-                     debug: Boolean = false
-                   )
+//  case class Config(
+//                     database: File = null,
+//                     outputDir: File = null,
+//                     gamma: Double = 0.75,
+//                     f: Int = 10,
+//                     verbose: Boolean = false,
+//                     dump: Boolean = false,
+//                     syntenicFraction: Double = 0.5,
+//                     kmerSize: Int = 11,
+//                     minimizerWindow: Int = 5,
+//                     brh: File = null,
+//                     debug: Boolean = false
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("syntenic-anchors") {
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("syntenic-anchors") {
       opt[File]("db") required() action { (x, c) =>
         c.copy(database = x)
       } text ("Directory path of database (e.g. output directory of 'extract' module).")
       opt[File]('o', "output-directory") required() action { (x, c) =>
         c.copy(outputDir = x)
       } text ("Output directory.")
-      note("\nOPTIONAL\n")
+      note("\nOPTIONAL FLAGS")
       opt[File]("brhs") action { (x, c) =>
         c.copy(brh = x)
       } text ("If best reciprocal hits file already exists, provide it here to skip pairwise-ORF alignments.")
@@ -71,14 +73,16 @@ object SyntenicAnchors extends tLines with GFFutils with MinimapUtils {
       }
 
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.database)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "syntenic-anchors")
       getBRHs(config)
     }
   }
 
-  def getBRHs(config: Config) = {
+  def getBRHs(config: ConfigHandling.fullConfig) = {
     val available_corse = Runtime.getRuntime().availableProcessors()
     val database = config.database.listFiles()
     val path_hashmap_Z = database.find(_.getName == "global_z.txt").get
