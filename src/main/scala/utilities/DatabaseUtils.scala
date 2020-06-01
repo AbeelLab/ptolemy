@@ -34,6 +34,33 @@ object DatabaseUtils extends MMethods {
       })
       _orfid2nodeid
     }
+
+    /**
+      * Load file containing a map from Node ID to list of gene names
+      * @return Map[String,(Int,Int)]
+      */
+    def loadNodeID2gene: File => scala.collection.mutable.Map[Int,List[String]] = db => {
+      // get file from the database that contains the desired mapping
+      val file = db.listFiles().find(_.getName == "orf2node_id.txt")
+      // check if file really exists before parsing
+      assert(file != None, "Could not find file mapping orf ID to node ID.")
+      // iterate through file and create map
+      val _nodeID2gene = openFileWithIterator(file.get).
+          foldLeft(scala.collection.mutable.Map[Int,List[String]]())((map, line) => {
+            // delimiter are tabs
+            val split = line.split("\t")
+            // get gene name (field split(1) is strain name)
+            val gene = split(0).toString
+            // get Node Identifiers
+            val nodeID = split(3).toInt
+            // append to the map
+            map.get(nodeID) match {
+              case Some(xs:List[String]) => map.updated(nodeID, xs :+ gene)
+              case None => map += (nodeID -> List(gene))
+            }
+          })
+      _nodeID2gene
+    }
   }
 
   /**

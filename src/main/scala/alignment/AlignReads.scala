@@ -14,6 +14,7 @@ import atk.Tool.progress
 import utilities.FileHandling._
 import utilities.ReadUtils
 import utilities.DatabaseUtils.GraphIndex
+import utilities.DatabaseUtils.PtolemyDB
 import utilities.MinimizerUtils.{MMethods, Minimizer}
 import utilities.ReadAlignmentUtils
 import utilities.GFAutils.ReadGFA
@@ -22,7 +23,7 @@ import utilities.ConfigHandling
 
 import scala.collection.parallel.ForkJoinTaskSupport
 
-object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods with ReadAlignmentUtils {
+object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils with MMethods with ReadAlignmentUtils {
 
 //  case class Config(
 //                     canonicalQuiver: File = null,
@@ -134,6 +135,8 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
   def expectedJI: (Double, Int) => Double = (error, kmer_size) => 1 / (2 * Math.pow(Math.E, (error * kmer_size)) - 1)
 
   def alignReads(config: ConfigHandling.fullConfig): Unit = {
+    // required some PtolemyDB data
+    val nodeGene = loadNodeID2gene(config.database)
     //set log level
     // val verbose = config.verbose || config.debug
     //construct global kmer and node index
@@ -193,8 +196,11 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
 
     //create temporary file path
     val output_name = config.prefix + ".gfa"
-    //create output file
+    //create output file for node localization
     val pw = new PrintWriter(config.outputDir + "/." + output_name + ".tmp")
+    //create output file for gene alignment results
+    val pwg = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".genes.gfa"))
+    pwg.println("H\tAlignment to canonical quiver genes")
     //get read file type
     val read_file_type = determineFileType(config.reads)
     //load reads as iterator
@@ -405,7 +411,6 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
           if (config.verbose) {
             println(timeStamp + "Curated alignment: " + curated_alignments)
             println(timeStamp + "Split alignments: " + max_contiguous_alignments)
-            //unaligned.foreach(region => println(region, failed_clusters.filter(x => region._1 <= x && region._2 >=x).size))
           }
           //create alignment string for each max contiguous alignment
           val aligned_structure = max_contiguous_alignments.map(_.map(_._1 + "+").mkString(","))
@@ -414,14 +419,19 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
           if (max_contiguous_alignments.forall(_.isEmpty))
             pw.println("P" + "\t" + current_read.name + "\t\t" + current_read.length + "M")
           //read is mapped somewhere
-          else aligned_structure.foreach(alignment =>
-            pw.println("P" + "\t" + current_read.name + "\t" + alignment + "\t" + current_read.length + "M"))
+          else aligned_structure.foreach{alignment =>
+              pw.println("P" + "\t" + current_read.name + "\t" 
+                + alignment + "\t" + current_read.length + "M")
+              alignment.replaceAll(",","").split("[\\+]").foreach{node =>
+                pwg.println("P" + "\t" + current_read.name + "\t" 
+                  + nodeGene.get(node.toInt).get.mkString(",") + "\t" 
+                  + current_read.length + "M")}}
         }
       }
       }
     }
-
     pw.close
+    pwg.close()
     println(timeStamp + "Alignment completed")
     updateCanonicalQuiver(config.outputDir, output_name, config.canonicalQuiver, config.minCoverage)
   }
@@ -441,6 +451,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
     pws.println("H\tAlignment to canonical quiver (static)")
     val pwd = new PrintWriter(output_directory + "/" + output_name.replace(".gfa", ".dynamic.gfa"))
     pwd.println("H\tAlignment to canonical (dynamic)")
+
     //load canonical quiver and and output nodes and edges with coverage information while retaining edges never
     // observed before
     openFileWithIterator(cq).foldLeft(edge_coverage)((filtered_coverage, line) => {
@@ -482,8 +493,8 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
     })
       //add new edges to output
       .foldLeft(0)((index, new_edge) => {
-      if (new_edge._2 >= min_coverage) pwd.println("L\t" + new_edge._1._1 + "\t+\t" + new_edge._1._2 +
-        "\t+\t1M\tFC:i:" + new_edge._2)
+      if (new_edge._2 >= min_coverage) pwd.println("L\t" + new_edge._1._1 +
+        "\t+\t" + new_edge._1._2 + "\t+\t1M\tFC:i:" + new_edge._2)
       index + 1
     })
 
@@ -494,6 +505,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
     })
     pwd.close()
     pws.close()
+
     tmp_output.delete()
     println("Successfully completed!")
   }
