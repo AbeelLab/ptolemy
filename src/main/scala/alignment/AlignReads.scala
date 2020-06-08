@@ -112,6 +112,10 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
       opt[Int]("chunk-size") action { (x, c) =>
         c.copy(chunkSize = x)
       } text ("\n"+" "*27+"Number of reads to load at a time (default is "+defaultValues.chunkSize+")")
+      opt[Unit]("no-static") action { (x, c) =>
+        c.copy(staticOutput = false)
+      } text("\n"+" "*27+"Save the graph with static results of the alignment\n"+
+        " "*27+"(default is "+defaultValues.staticOutput+")")
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
       } text("\n"+" "*27+"Display extra process information (default is "+ defaultValues.verbose+")")
@@ -207,8 +211,8 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
     val pwg = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".genes.gfa"))
     pwg.println("H\tAlignment to canonical quiver genes")
     //create output file for statistics
-    val pws = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".strains.out"))
-    pws.println("Strain percentage")
+    val pwi = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".strains.out"))
+    pwi.println("Strain percentage")
     //get read file type
     val read_file_type = determineFileType(config.reads)
     //load reads as iterator
@@ -453,35 +457,35 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
     // val sortedStrainInters = ListMap(strainInters.toSeq.sortWith(_._1.length > _._1.length):_*)
     val sortedStrainInters = ListMap(strainInters.toSeq.sortBy({case (key, value) => (-key.length, key.head)}):_*)
     sortedStrainInters.foreach{
-                case (key, value) => pws.println(
+                case (key, value) => pwi.println(
                                     key.mkString("\t") + "\t->\t" + "%.4f".format(100.0*value/total) + "%")}
     // close files
     pw.close()
     pwg.close()
-    pws.close()
+    pwi.close()
     println(timeStamp + "Alignment completed")
-    updateCanonicalQuiver(config.outputDir, output_name, config.canonicalQuiver, config.minCoverage)
+    updateCanonicalQuiver(config, output_name)
   }
 
   /**
     * Method to update canonical quiver
     */
-  def updateCanonicalQuiver(output_directory: File, output_name: String, cq: File, min_coverage: Int): Unit = {
-    val tmp_output = new File(output_directory + "/." + output_name + ".tmp")
+  def updateCanonicalQuiver(config: ConfigHandling.fullConfig, output_name: String): Unit = {
+    val tmp_output = new File(config.outputDir+ "/." + output_name + ".tmp")
     println(timeStamp + "Computing edge coverage")
     //iterate through alignments and keep track of edges and their coverage as well as total reads and unmapped
     val (edge_coverage, node_coverage, total_alignments, unmapped) = getAlignmentStats(tmp_output)
     println(timeStamp + "Found " + total_alignments + " total alignments, of which " +
       (unmapped.toDouble / total_alignments) * 100 + "% are unmapped")
     println(timeStamp + "Writing coverage to disk")
-    val pws = new PrintWriter(output_directory + "/" + output_name.replace(".gfa", ".static.gfa"))
-    pws.println("H\tAlignment to canonical quiver (static)")
-    val pwd = new PrintWriter(output_directory + "/" + output_name.replace(".gfa", ".dynamic.gfa"))
+    val pws = new PrintWriter(config.outputDir+ "/" + output_name.replace(".gfa", ".static.gfa"))
+    if (config.staticOutput) pws.println("H\tAlignment to canonical quiver (static)")
+    val pwd = new PrintWriter(config.outputDir+ "/" + output_name.replace(".gfa", ".dynamic.gfa"))
     pwd.println("H\tAlignment to canonical (dynamic)")
 
     //load canonical quiver and and output nodes and edges with coverage information while retaining edges never
     // observed before
-    openFileWithIterator(cq).foldLeft(edge_coverage)((filtered_coverage, line) => {
+    openFileWithIterator(config.canonicalQuiver).foldLeft(edge_coverage)((filtered_coverage, line) => {
       //get line type
       val line_split = line.split("\t")
       line_split.head match {
@@ -494,9 +498,9 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
           //update line with coverage
           val updated_line = updateWithCoverage(line, coverage)
           //if coverage is high enough, output to dynamic gfa
-          if (coverage >= min_coverage) pwd.println(updated_line)
-          //output to static gfa, regardless
-          pws.println(updated_line)
+          if (coverage >= config.minCoverage) pwd.println(updated_line)
+          //output to static gfa anyway (only if desired)
+          if (config.staticOutput) pws.println(updated_line)
           //remove edge
           filtered_coverage - edge
         }
@@ -509,9 +513,9 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
           //update line with coverage
           val updated_line = updateWithCoverage(line, coverage)
           //output to dynamic if coverage is high enough
-          if (coverage >= min_coverage) pwd.println(updated_line)
-          //output to static regardless
-          pws.println(updated_line)
+          if (coverage >= config.minCoverage) pwd.println(updated_line)
+          //output to static regardless (if desired)
+          if (config.staticOutput) pws.println(updated_line)
           filtered_coverage
         }
         //Something else, move on
@@ -520,7 +524,7 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
     })
       //add new edges to output
       .foldLeft(0)((index, new_edge) => {
-      if (new_edge._2 >= min_coverage) pwd.println("L\t" + new_edge._1._1 +
+      if (new_edge._2 >= config.minCoverage) pwd.println("L\t" + new_edge._1._1 +
         "\t+\t" + new_edge._1._2 + "\t+\t1M\tFC:i:" + new_edge._2)
       index + 1
     })
@@ -528,12 +532,16 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
     //iterate through alignments once more and output to file
     openFileWithIterator(tmp_output).foreach(x => {
       pwd.println(x)
-      pws.println(x)
+      if (config.staticOutput) pws.println(x)
     })
     pwd.close()
-    pws.close()
+    if (config.staticOutput) pws.close()
 
     tmp_output.delete()
+    if (!(config.staticOutput)) {
+      val pws = new File(config.outputDir+ "/" + output_name.replace(".gfa", ".static.gfa"))
+      pws.delete()
+    }
     println(timeStamp + "Successfully completed!")
   }
 }
