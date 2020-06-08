@@ -22,6 +22,7 @@ import utilities.NumericalUtils.{max, min}
 import utilities.ConfigHandling
 
 import scala.collection.parallel.ForkJoinTaskSupport
+import scala.collection.immutable.ListMap
 
 object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils with MMethods with ReadAlignmentUtils {
 
@@ -135,10 +136,14 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
   def expectedJI: (Double, Int) => Double = (error, kmer_size) => 1 / (2 * Math.pow(Math.E, (error * kmer_size)) - 1)
 
   def alignReads(config: ConfigHandling.fullConfig): Unit = {
-    // required some PtolemyDB data
+    // get the mapping between the canonical quiver nodes and the strain genes
     val nodeGene = loadNodeID2gene(config.database)
-    //set log level
-    // val verbose = config.verbose || config.debug
+    // get the mapping between the canonical quiver nodes and the strains 
+    val nodeStrain = loadNodeID2strain(config.database)
+    // generate a mutable map with the possible intersections between strains
+    val strainInters = scala.collection.mutable.Map(
+                              strainIntersection(config.database).toSeq: _*) 
+    
     //construct global kmer and node index
     val (global_node_kmer_index, global_inter_kmer_index, global_node_index, global_node_info_index) = {
       //get name of canonical quiver file
@@ -201,6 +206,9 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
     //create output file for gene alignment results
     val pwg = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".genes.gfa"))
     pwg.println("H\tAlignment to canonical quiver genes")
+    //create output file for statistics
+    val pws = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".strains.out"))
+    pws.println("Strain percentage")
     //get read file type
     val read_file_type = determineFileType(config.reads)
     //load reads as iterator
@@ -417,21 +425,40 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
           if (config.verbose) println(timeStamp + "--Found the following alignment(s): " + aligned_structure.mkString(";"))
           //read is unmapped
           if (max_contiguous_alignments.forall(_.isEmpty))
+          {
             pw.println("P" + "\t" + current_read.name + "\t\t" + current_read.length + "M")
+          }
           //read is mapped somewhere
           else aligned_structure.foreach{alignment =>
               pw.println("P" + "\t" + current_read.name + "\t" 
                 + alignment + "\t" + current_read.length + "M")
+              ////// TODO: adapt for - alignment results in case they may appear
               alignment.replaceAll(",","").split("[\\+]").foreach{node =>
                 pwg.println("P" + "\t" + current_read.name + "\t" 
                   + nodeGene.get(node.toInt).get.mkString(",") + "\t" 
-                  + current_read.length + "M")}}
+                  + current_read.length + "M")}
+              ////// TODO: adapt for - alignment results in case they may appear
+              alignment.replaceAll(",","").split("[\\+]").foreach{node =>
+                  strainInters(nodeStrain(node.toInt)) += 1}
+          }
         }
       }
       }
     }
-    pw.close
+    
+    // sum values and correct for unmapped (total = 0 cause division over zero)
+    val sum = strainInters.foldLeft(0)(_+_._2)
+    val total = if (sum == 0) sum+1 else sum
+    // sort the output and assign percentages
+    // val sortedStrainInters = ListMap(strainInters.toSeq.sortWith(_._1.length > _._1.length):_*)
+    val sortedStrainInters = ListMap(strainInters.toSeq.sortBy({case (key, value) => (-key.length, key.head)}):_*)
+    sortedStrainInters.foreach{
+                case (key, value) => pws.println(
+                                    key.mkString("\t") + "\t->\t" + "%.4f".format(100.0*value/total) + "%")}
+    // close files
+    pw.close()
     pwg.close()
+    pws.close()
     println(timeStamp + "Alignment completed")
     updateCanonicalQuiver(config.outputDir, output_name, config.canonicalQuiver, config.minCoverage)
   }
@@ -507,6 +534,6 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
     pws.close()
 
     tmp_output.delete()
-    println("Successfully completed!")
+    println(timeStamp + "Successfully completed!")
   }
 }

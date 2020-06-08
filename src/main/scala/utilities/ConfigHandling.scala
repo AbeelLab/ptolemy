@@ -144,12 +144,40 @@ object ConfigHandling {
     val diff = diffCS ++ diffSC
     assert(diff.isEmpty, "Invalid stored config.tsv file")
 
-    // define list of values that cannot be changed for a given run
-    val immutableKeys = List("canonicalQuiver", "hlgg", "reference", 
-                             "kmerSize", "windowSize", "isCircular")
-    // list of the modules where immutableKeys first appear (with same order)
-    val modImmutableKeys = List("index-graph", "reference-graph", "reference-graph",
-                                "syntenic-anchors", "index-graph", "extract")
+    // define map of flags and the first module where they appear
+    val flagModule = Map(
+                          "isCircular" -> "extract",
+                          "genomesFile" -> "extract",
+                          "minInterSize" -> "extract",
+                          "repeatRadius" -> "extract",
+                          "splitOverlaps" -> "extract",
+                          "showWarnings" -> "extract",
+                          "useGene" -> "extract",
+                          "brh" -> "syntenic-anchors", 
+                          "flankingWindow" -> "syntenic-anchors", 
+                          "minimizerWindow" -> "syntenic-anchors", 
+                          "gamma" -> "syntenic-anchors", 
+                          "syntenicFraction" -> "syntenic-anchors", 
+                          "mergeCC" -> "syntenic-anchors", 
+                          "kmerSize" -> "syntenic-anchors", 
+                          "syntenicAnchors" -> "canonical-quiver",
+                          "msa" -> "canonical-quiver",
+                          "canonicalQuiver" -> "index-graph",
+                          "windowSize" -> "index-graph",
+                          "reads" -> "align-reads",
+                          "chunkSize" -> "align-reads",
+                          "minCoverage" -> "align-reads",
+                          "minGeneLength" -> "align-reads",
+                          "minHits" -> "align-reads",
+                          "minReadLength" -> "align-reads",
+                          "lengthProportion" -> "align-reads",
+                          "maxError" -> "align-reads",
+                          "proportion" -> "align-reads",
+                          "prefix" -> "align-reads",
+                          "hlgg" -> "reference-graph",
+                          "reference" -> "reference-graph", 
+                          "traverseNodes" -> "variant-caller", 
+                        )
 
     // define the output map
     val finalMap = scala.collection.mutable.Map[String,String]() 
@@ -158,16 +186,17 @@ object ConfigHandling {
     for ((k,v) <- currentMap) {
       // if nonmatching parameters between maps and these parameters cannot be 
       // modified between modules
-      if (currentMap(k) != savedMap(k) && immutableKeys.contains(k)) {
+      if (currentMap(k) != savedMap(k) && flagModule.contains(k)) {
         // if it is the module where the immutable parameter is first used it
         // should be chosen from input
-        if (modImmutableKeys(immutableKeys.indexOf(k)) == module) {
+        if (flagModule(k) == module) {
           finalMap(k) = currentMap(k)
         // otherwise savedMap values should superseed the values of currentMap
         } else {
-          println(timeStamp+"Option "+k+" with value "+currentMap(k)+
-                " conflicts with previously used value "+savedMap(k)+
-                ", taking latter parameter")
+          if (currentMap(k) != "null") {
+            println(timeStamp+"Option "+k+" with value "+currentMap(k)+
+                  " conflicts with previously used value "+savedMap(k)+
+                  ", taking latter parameter")}
           finalMap(k) = savedMap(k)
         }
       } 

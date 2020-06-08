@@ -37,7 +37,7 @@ object DatabaseUtils extends MMethods {
 
     /**
       * Load file containing a map from Node ID to list of gene names
-      * @return Map[String,(Int,Int)]
+      * @return Map[Int,List[String]]
       */
     def loadNodeID2gene: File => scala.collection.mutable.Map[Int,List[String]] = db => {
       // get file from the database that contains the desired mapping
@@ -49,7 +49,7 @@ object DatabaseUtils extends MMethods {
           foldLeft(scala.collection.mutable.Map[Int,List[String]]())((map, line) => {
             // delimiter are tabs
             val split = line.split("\t")
-            // get gene name (field split(1) is strain name)
+            // get gene name 
             val gene = split(0).toString
             // get Node Identifiers
             val nodeID = split(3).toInt
@@ -60,6 +60,58 @@ object DatabaseUtils extends MMethods {
             }
           })
       _nodeID2gene
+    }
+
+    /**
+      * Load file containing a mapping from the Node ID to list of strains
+      * @return Map[Int,List[String]]
+      */
+    def loadNodeID2strain: File => scala.collection.mutable.Map[Int,List[String]] = db => {
+      // get file from the database that contains the desired mapping
+      val file = db.listFiles().find(_.getName == "orf2node_id.txt")
+      // check if file really exists before parsing
+      assert(file != None, "Could not find file mapping orf ID to node ID.")
+      // iterate through file and create map
+      val _nodeID2strain = openFileWithIterator(file.get).
+          foldLeft(scala.collection.mutable.Map[Int,List[String]]())((map, line) => {
+            // delimiter are tabs
+            val split = line.split("\t")
+            // get strain name 
+            val strain = split(1).toString
+            // get Node Identifiers
+            val nodeID = split(3).toInt
+            // append to the map
+            map.get(nodeID) match {
+              case Some(xs:List[String]) => map.updated(nodeID, xs :+ strain)
+              case None => map += (nodeID -> List(strain))
+            }
+          })
+      _nodeID2strain.foreach{
+                case (key, value) => _nodeID2strain(key) = value.sorted}
+      _nodeID2strain
+    }
+
+    /**
+      * From database, load the unique strains and generate strain intersections 
+      * @return Map[List(String),Int]
+      */
+    def strainIntersection: File => Map[List[String],Int] = db => {
+      // get file from those of the database that contains the desired mapping
+      val file = db.listFiles().find(_.getName == "orf2node_id.txt")
+      // check if file really exists before parsing
+      assert(file != None, "Could not find file mapping orf ID to node ID.")
+      // iterate through file and create a list with strain names
+      val _strains = openFileWithIterator(file.get).
+          foldLeft(scala.collection.mutable.Seq[String]())((seq, line) => {
+          // get strain name field 
+          val strain = line.split("\t")(1).toString
+          // append to the list (even if it exists)
+          seq :+ strain 
+        })
+      // delete duplicates, generate all possible subsets and convert to map
+      val output = _strains.toSet[String].subsets.map(subset => subset.toList.sorted -> 0).toMap
+      // remove the empty set and return
+      output - List()
     }
   }
 
