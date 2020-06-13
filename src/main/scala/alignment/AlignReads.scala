@@ -144,9 +144,8 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
     val nodeGene = loadNodeID2gene(config.database)
     // get the mapping between the canonical quiver nodes and the strains 
     val nodeStrain = loadNodeID2strain(config.database)
-    // generate a mutable map with the possible intersections between strains
-    val strainInters = scala.collection.mutable.Map(
-                              strainIntersection(config.database).toSeq: _*) 
+    // get the name of all strains
+    val strainNames = loadStrainNames(config.database)
     
     //construct global kmer and node index
     val (global_node_kmer_index, global_inter_kmer_index, global_node_index, global_node_info_index) = {
@@ -211,8 +210,8 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
     val pwg = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".genes.gfa"))
     pwg.println("H\tAlignment to canonical quiver genes")
     //create output file for statistics
-    val pwi = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".strains.out"))
-    pwi.println("Strain percentage")
+    val pws = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".strains.out"))
+    pws.println("Strain\t" + strainNames.mkString("\t"))
     //get read file type
     val read_file_type = determineFileType(config.reads)
     //load reads as iterator
@@ -436,33 +435,30 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
           else aligned_structure.foreach{alignment =>
               pw.println("P" + "\t" + current_read.name + "\t" 
                 + alignment + "\t" + current_read.length + "M")
-              ////// TODO: adapt for - alignment results in case they may appear
               alignment.replaceAll(",","").split("[\\+]").foreach{node =>
-                pwg.println("P" + "\t" + current_read.name + "\t" 
-                  + nodeGene.get(node.toInt).get.mkString(",") + "\t" 
-                  + current_read.length + "M")}
-              ////// TODO: adapt for - alignment results in case they may appear
-              alignment.replaceAll(",","").split("[\\+]").foreach{node =>
-                  strainInters(nodeStrain(node.toInt)) += 1}
+                  pwg.println("P" + "\t" + current_read.name + "\t" 
+                    + nodeGene.get(node.toInt).get.sorted.mkString(",") + "\t" 
+                    + current_read.length + "M")
+                  pws.print(current_read.name + "\t")
+                  for (strain_i <- strainNames) {
+                    if (nodeStrain.get(node.toInt).get.contains(strain_i)) {
+                      pws.print("1\t")
+                    } else {
+                      pws.print("0\t")
+                    }
+                  }
+                  pws.println("")
+              }
+            }
           }
         }
       }
-      }
     }
-    
-    // sum values and correct for unmapped (total = 0 cause division over zero)
-    val sum = strainInters.foldLeft(0)(_+_._2)
-    val total = if (sum == 0) sum+1 else sum
-    // sort the output and assign percentages
-    // val sortedStrainInters = ListMap(strainInters.toSeq.sortWith(_._1.length > _._1.length):_*)
-    val sortedStrainInters = ListMap(strainInters.toSeq.sortBy({case (key, value) => (-key.length, key.head)}):_*)
-    sortedStrainInters.foreach{
-                case (key, value) => pwi.println(
-                                    key.mkString("\t") + "\t->\t" + "%.4f".format(100.0*value/total) + "%")}
+
     // close files
     pw.close()
     pwg.close()
-    pwi.close()
+    pws.close()
     println(timeStamp + "Alignment completed")
     updateCanonicalQuiver(config, output_name)
   }

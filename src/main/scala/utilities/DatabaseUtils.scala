@@ -92,6 +92,27 @@ object DatabaseUtils extends MMethods {
     }
 
     /**
+      * From database, load the unique strains name
+      * @return List(String)
+      */
+    def loadStrainNames: File => List[String] = db => {
+      // get file from those of the database that contains the desired mapping
+      val file = db.listFiles().find(_.getName == "orf2node_id.txt")
+      // check if file really exists before parsing
+      assert(file != None, "Could not find file mapping orf ID to node ID.")
+      // iterate through file and create a seq with strain names
+      val _strains = openFileWithIterator(file.get).
+          foldLeft(List[String]())((seq, line) => {
+          // get strain name field 
+          val strain = line.split("\t")(1).toString
+          // append to the list (even if it exists)
+          seq :+ strain 
+        })
+      // delete duplicates and sort names
+      _strains.distinct.sorted
+    }
+
+    /**
       * From database, load the unique strains and generate strain intersections 
       * @return Map[List(String),Int]
       */
@@ -100,7 +121,7 @@ object DatabaseUtils extends MMethods {
       val file = db.listFiles().find(_.getName == "orf2node_id.txt")
       // check if file really exists before parsing
       assert(file != None, "Could not find file mapping orf ID to node ID.")
-      // iterate through file and create a list with strain names
+      // iterate through file and create a seq with strain names
       val _strains = openFileWithIterator(file.get).
           foldLeft(scala.collection.mutable.Seq[String]())((seq, line) => {
           // get strain name field 
