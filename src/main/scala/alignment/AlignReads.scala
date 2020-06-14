@@ -209,7 +209,7 @@ object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils 
     //create output file for gene alignment results
     val pwg = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".genes.gfa"))
     pwg.println("H\tAlignment to canonical quiver genes")
-    //create output file for statistics
+    //create output file for strain matrix table
     val pws = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".strains.out"))
     pws.println("Strain\t" + strainNames.mkString("\t"))
     //get read file type

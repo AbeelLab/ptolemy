@@ -155,9 +155,12 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
         }
       }
       }
+
     println(timeStamp + "Constructed canonical quiver with " + hlgg_nodes.size + " nodes and " + hlgg_edges.map(_._2.size).sum +
       " edges")
+    val strainNodes = scala.collection.mutable.Map[String,Seq[Int]]()
     println(timeStamp + "Writing GFA file to disk")
+    val sortedNodeID = hlgg_nodes.toSeq.sorted
     val pw = new PrintWriter(config.outputDir + "/canonical_quiver.gfa")
     pw.println(getGFAHeader)
     hlgg_nodes.foreach(x => pw.println(constructSegmentLine(x) + addGenomeCountField(node_to_genome_count.get(x))))
@@ -173,12 +176,27 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
       })
       //output paths
       pw.println(Seq("P", sequence, orf_to_node_ids.mkString(","), "*").mkString("\t"))
+
+      // boolean (falses) list for the matrix table for current path
+      val nodeInStrain = scala.collection.mutable.Seq.fill(hlgg_nodes.size)(0)
+      // loop over the nodes of the path
+      for (node <- orf_to_node_ids) {
+        // change the node to true of the current node in sorted sequence of 
+        // node ID stored into strainNodes("")
+        nodeInStrain.update(sortedNodeID.indexOf(node.dropRight(1).toInt),
+                            1)
+      }
+      // assign the current nodeInStrain sequence to the map
+      strainNodes(sequence) = nodeInStrain
     })
+
+
     openFileWithIterator(path_hashmap_Y).foreach(line => {
       val split = line.split("\t")
       pw.println(Seq("G", split.head, split(1)).mkString("\t"))
     })
     pw.close
+
     val pw_orfids = new PrintWriter(config.database + "/orf2node_id.txt")
     openFileWithIterator(path_orfids).foreach(line => {
       val split = line.split("\t")
@@ -187,6 +205,20 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
       pw_orfids.println(Seq(split(0), split(1), orf_id, node_id).mkString("\t"))
     })
     pw_orfids.close
+
+    // print the matrix table for the canonical quiver
+    val pws = new PrintWriter(config.outputDir + "/canonical_quiver.strains.out")
+    // print the header
+    pws.print("Strain\t")
+    strainNodes.foreach{ case (k,v) => pws.print(k + "\t")}
+    pws.println("")
+    for ((nodeID, i) <- sortedNodeID.zipWithIndex) {
+      pws.print(nodeID + "\t")
+      strainNodes.foreach{ case (k,v) => pws.print(v(i) + "\t")}
+      pws.println("")
+    }
+    pws.close
+
     println(timeStamp + "Successfully completed!")
   }
 

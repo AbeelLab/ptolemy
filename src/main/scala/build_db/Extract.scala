@@ -314,9 +314,10 @@ object Extract extends tLines with GFFutils with MinimapUtils {
     }}
 
     //output map z and z prime to database
-    map_z.foreach{case (sequence_id, orf_ids) => {
-      pw_Z.println(sequence_id + "\t" + orf_ids.mkString(","))
-      orf_ids.foreach(orf => pw_Z_prime.println(orf + "\t" + sequence_id))
+    scala.collection.immutable.ListMap(map_z.toSeq.sortBy(_._1):_*).foreach{
+      case (sequence_id, orf_ids) => {
+        pw_Z.println(sequence_id + "\t" + orf_ids.mkString(","))
+        orf_ids.foreach(orf => pw_Z_prime.println(orf + "\t" + sequence_id))
     }}
 
     //close output files
