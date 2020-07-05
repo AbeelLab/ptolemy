@@ -158,7 +158,7 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
 
     println(timeStamp + "Constructed canonical quiver with " + hlgg_nodes.size + " nodes and " + hlgg_edges.map(_._2.size).sum +
       " edges")
-    val strainNodes = scala.collection.mutable.Map[String,Seq[Int]]()
+    val path2Nodes = scala.collection.mutable.Map[String,Seq[Boolean]]()
     println(timeStamp + "Writing GFA file to disk")
     val sortedNodeID = hlgg_nodes.toSeq.sorted
     val pw = new PrintWriter(config.outputDir + "/canonical_quiver.gfa")
@@ -178,22 +178,23 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
       pw.println(Seq("P", sequence, orf_to_node_ids.mkString(","), "*").mkString("\t"))
 
       // boolean (falses) list for the matrix table for current path
-      val nodeInStrain = scala.collection.mutable.Seq.fill(hlgg_nodes.size)(0)
+      val nodeInPath = scala.collection.mutable.Seq.fill(hlgg_nodes.size)(false)
       // loop over the nodes of the path
       for (node <- orf_to_node_ids) {
-        // change the node to true of the current node in sorted sequence of 
-        // node ID stored into strainNodes("")
-        nodeInStrain.update(sortedNodeID.indexOf(node.dropRight(1).toInt),
-                            1)
+        // change the current node label of sorted sequence of node ID to true
+        nodeInPath.update(sortedNodeID.indexOf(node.dropRight(1).toInt), true)
       }
-      // assign the current nodeInStrain sequence to the map
-      strainNodes(sequence) = nodeInStrain
+      // assign the current nodeInPath sequence to the map
+      path2Nodes(sequence) = nodeInPath
     })
 
-
+    // map to store the relation between strains and paths
+    val strain2Paths = scala.collection.mutable.Map[String, List[String]]()
+    // save the strains into the file
     openFileWithIterator(path_hashmap_Y).foreach(line => {
       val split = line.split("\t")
       pw.println(Seq("G", split.head, split(1)).mkString("\t"))
+      strain2Paths(split.head) = split(1).split(",").toList
     })
     pw.close
 
@@ -206,15 +207,28 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
     })
     pw_orfids.close
 
+    // from strain2Paths and path2Nodes, strain2Nodes shoould be computed with 
+    // a logical OR between the path nodes of each strain
+    val strain2Nodes = scala.collection.mutable.Map[String, Seq[Boolean]]()
+    scala.collection.immutable.ListMap(strain2Paths.toSeq.sortBy(_._1):_*).foreach{
+      case (strain_i, pathList) =>
+        var nodeList = scala.collection.mutable.Seq.fill(hlgg_nodes.size)(false)
+        pathList.foreach{case path_i =>
+          for (i <- nodeList.indices)
+            nodeList(i) = nodeList(i) || path2Nodes(path_i)(i)
+        }
+        strain2Nodes(strain_i) = nodeList
+    }
+
     // print the matrix table for the canonical quiver
     val pws = new PrintWriter(config.outputDir + "/canonical_quiver.strains.out")
     // print the header
-    pws.print("Strain\t")
-    strainNodes.foreach{ case (k,v) => pws.print(k + "\t")}
+    pws.print("Node\t")
+    strain2Nodes.foreach{p => pws.print(p._1 + "\t")}
     pws.println("")
     for ((nodeID, i) <- sortedNodeID.zipWithIndex) {
       pws.print(nodeID + "\t")
-      strainNodes.foreach{ case (k,v) => pws.print(v(i) + "\t")}
+      strain2Nodes.foreach{p => if (p._2(i)) pws.print("1\t") else pws.print("0\t")  }
       pws.println("")
     }
     pws.close
