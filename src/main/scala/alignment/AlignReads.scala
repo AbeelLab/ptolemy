@@ -14,100 +14,118 @@ import atk.Tool.progress
 import utilities.FileHandling._
 import utilities.ReadUtils
 import utilities.DatabaseUtils.GraphIndex
+import utilities.DatabaseUtils.PtolemyDB
 import utilities.MinimizerUtils.{MMethods, Minimizer}
 import utilities.ReadAlignmentUtils
 import utilities.GFAutils.ReadGFA
 import utilities.NumericalUtils.{max, min}
+import utilities.ConfigHandling
 
 import scala.collection.parallel.ForkJoinTaskSupport
+import scala.collection.immutable.ListMap
 
-object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods with ReadAlignmentUtils {
+object AlignReads extends ReadGFA with PtolemyDB with GraphIndex with ReadUtils with MMethods with ReadAlignmentUtils {
 
-  case class Config(
-                     canonicalQuiver: File = null,
-                     reads: File = null,
-                     db: File = null,
-                     kmerSize: Int = 15,
-                     windowSize: Int = 3,
-                     proportion: Double = 0.6,
-                     maxError: Double = 0.20,
-                     chunkSize: Int = 30000,
-                     minReadLength: Int = 500,
-                     lengthProportion: Double = 0.3,
-                     minCoverage: Int = 5,
-                     minHits: Int = 1,
-                     maxThreads: Int = 1,
-                     verbose: Boolean = false,
-                     minGeneLength: Int = -1,
-                     prefix: String = null,
-                     outputDir: File = null,
-                     debug: Boolean = false,
-                   )
+//  case class Config(
+//                     canonicalQuiver: File = null,
+//                     reads: File = null,
+//                     database: File = null,
+//                     kmerSize: Int = 15,
+//                     windowSize: Int = 3,
+//                     proportion: Double = 0.6,
+//                     maxError: Double = 0.20,
+//                     chunkSize: Int = 30000,
+//                     minReadLength: Int = 500,
+//                     lengthProportion: Double = 0.3,
+//                     minCoverage: Int = 5,
+//                     minHits: Int = 1,
+//                     maxThreads: Int = 1,
+//                     verbose: Boolean = true,
+//                     minGeneLength: Int = -1,
+//                     prefix: String = null,
+//                     outputDir: File = null,
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("align-reads") {
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("align-reads") {
       opt[File]('r', "reads") required() action { (x, c) =>
         c.copy(reads = x)
-      } text ("Reads in FASTA, FASTQ, or gzipped-FASTQ format (detects automatically based on extension).")
+      } text ("\n"+" "*27+"Reads in FASTA, FASTQ, or gzipped-FASTQ format \n"+
+        " "*27+"(format is detected automatically based on extension)")
       opt[File]('c', "canonical-quiver") required() action { (x, c) =>
         c.copy(canonicalQuiver = x)
-      } text ("Output directory for database to be stored.")
-      opt[File]("db") required() action { (x, c) =>
-        c.copy(db = x)
-      } text ("Directory path of database (e.g. output directory of 'extract' module).")
+      } text ("Path to canonical quiver in GFA-format")
+      opt[File]('d',"db") required() action { (x, c) =>
+        c.copy(database = x)
+      } text ("\n"+" "*27+"Directory path of database (i.e. output-directory used "+
+        "\n"+" "*27+"for the 'extract' module)")
       opt[File]('o', "output-directory") required() action { (x, c) =>
         c.copy(outputDir = x)
-      } text ("Output directory for database to be stored.")
+      } text ("Output directory for database to be stored")
       opt[String]('p', "prefix") required() action { (x, c) =>
         c.copy(prefix = x)
-      } text ("Prefix for output file.")
-      note("\nOPTIONAL\n")
+      } text ("\n"+" "*27+"String to set as prefix for output file")
+      note("\nOPTIONAL FLAGS")
       opt[Int]("read-length") action { (x, c) =>
         c.copy(minReadLength = x)
-      } text ("Minimum read length (default is 500). Only read length of at least this size are processed.")
+      } text ("\n"+" "*27+"Minimum read length: only reads of at least this size\n"+
+        " "*27+"are processed (default is "+defaultValues.minReadLength+")")
       opt[Int]('t', "threads") action { (x, c) =>
         c.copy(maxThreads = x)
-      } text ("Maximum number of threads to use (default is 1).")
+      } text ("\n"+" "*27+"Maximum number of threads to use (default is "+defaultValues.maxThreads+")")
       opt[Int]('k', "kmer-size") action { (x, c) =>
         c.copy(kmerSize = x)
-      } text ("Size of kmers (default is 15).")
+      } text ("\n"+" "*27+"k-mer size used during alignment (default is "+defaultValues.kmerSize+")")
       opt[Int]('w', "window-size") action { (x, c) =>
         c.copy(windowSize = x)
-      } text ("Size of minimizer window (default is 3).")
+      } text ("Minimizer window size (default is "+defaultValues.minimizerWindow+")")
       opt[Double]('e', "max-error") action { (x, c) =>
         c.copy(maxError = x)
-      } text ("Maximum tolerable error for a read (default is 0.2). This influences the expected jaccard index " +
-        "between a read and node.")
-      opt[Double]('d', "distance-proportion") action { (x, c) =>
+      } text ("\n"+" "*27+"Maximum tolerable error for a read, which influences the \n"+
+        " "*27+"expected Jaccard index value between a read and node \n"+
+        " "*27+"(default value is "+defaultValues.maxError+")")
+      opt[Double]("distance-proportion") action { (x, c) =>
         c.copy(proportion = x)
-      } text ("ORF proportion for maximum distance allowed between two minimizers during clustering. This is " +
-        "based on the the size of an ORF. For example, given distance proportion, d, and size of an ORF, l, then the " +
-        "max distance is: d*l.")
+      } text ("Open-Reading-Frame proportion for maximum distance allowed \n"+
+        " "*27+"between two minimizers during clustering. This is based on\n"+
+        " "*27+"the the size of an ORF, e.g. given distance proportion (d)\n"+
+        " "*27+"and size of an ORF (l) then the maximum distance is (d*l)\n"+
+        " "*27+"(default value for the distance-proportion is "+defaultValues.proportion+")")
       opt[Double]('l', "length-ratio") action { (x, c) =>
         c.copy(lengthProportion = x)
-      } text ("Maximum tolerable ratio between the the length of cluster and the size of a node (default is 0.3)")
+      } text ("Maximum tolerable ratio between the the length of cluster \n"+
+        " "*27+"and the size of a node (default is "+defaultValues.lengthProportion+")")
       opt[Int]("min-hits") action { (x, c) =>
         c.copy(minHits = x)
-      } text ("Minimum number of minimizer hits for candidate node alignments (default is 3).")
+      } text ("\n"+" "*27+"Minimum number of minimizer hits for candidate node\n"+
+        " "*27+"alignments (default is "+defaultValues.minHits+")")
       opt[Int]("annotation-length") action { (x, c) =>
         c.copy(minGeneLength = x)
-      } text ("Overwrite smallest observed annotation in the population to this value.")
+      } text ("Overwrite smallest observed annotation in the population\n"+
+        " "*27+"to this value (default is "+defaultValues.minGeneLength+", taking the smallest annotation\n"+
+        " "*27+"within the population)")
       opt[Int]("min-coverage") action { (x, c) =>
         c.copy(minCoverage = x)
-      } text ("Only report nodes and edges with at least this amount of coverage (default is 5).")
+      } text ("\n"+" "*27+"Only report nodes and edges with at least this amount of\n"+
+        " "*27+"coverage (default is "+defaultValues.minCoverage+")")
       opt[Int]("chunk-size") action { (x, c) =>
         c.copy(chunkSize = x)
-      } text ("Number of reads to load at a time(default is 30000).")
+      } text ("\n"+" "*27+"Number of reads to load at a time (default is "+defaultValues.chunkSize+")")
+      opt[Unit]("no-static") action { (x, c) =>
+        c.copy(staticOutput = false)
+      } text("\n"+" "*27+"Save the graph with static results of the alignment\n"+
+        " "*27+"(default is "+defaultValues.staticOutput+")")
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
-      }
-      opt[Unit]("debug") action { (x, c) =>
-        c.copy(debug = true)
-      }
+      } text("\n"+" "*27+"Display extra process information (default is "+ defaultValues.verbose+")")
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.db)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "align-reads")
+      //check whether quiver and reads exist prior to runing the alignment
       verifyFile(config.canonicalQuiver)
       verifyFile(config.reads)
       alignReads(config)
@@ -121,9 +139,14 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
     */
   def expectedJI: (Double, Int) => Double = (error, kmer_size) => 1 / (2 * Math.pow(Math.E, (error * kmer_size)) - 1)
 
-  def alignReads(config: Config): Unit = {
-    //set log level
-    val verbose = config.verbose || config.debug
+  def alignReads(config: ConfigHandling.fullConfig): Unit = {
+    // get the mapping between the canonical quiver nodes and the strain genes
+    val nodeGene = loadNodeID2gene(config.database)
+    // get the mapping between the canonical quiver nodes and the strains 
+    val nodeStrain = loadNodeID2strain(config.database)
+    // get the name of all strains
+    val strainNames = loadStrainNames(config.database)
+    
     //construct global kmer and node index
     val (global_node_kmer_index, global_inter_kmer_index, global_node_index, global_node_info_index) = {
       //get name of canonical quiver file
@@ -181,8 +204,14 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
 
     //create temporary file path
     val output_name = config.prefix + ".gfa"
-    //create output file
+    //create output file for node localization
     val pw = new PrintWriter(config.outputDir + "/." + output_name + ".tmp")
+    //create output file for gene alignment results
+    val pwg = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".genes.gfa"))
+    pwg.println("H\tAlignment to canonical quiver genes")
+    //create output file for strain matrix table
+    val pws = new PrintWriter(config.outputDir + "/" + output_name.replace(".gfa", ".strains.out"))
+    pws.println("Read\t" + strainNames.mkString("\t"))
     //get read file type
     val read_file_type = determineFileType(config.reads)
     //load reads as iterator
@@ -205,8 +234,8 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
         //get current read name, seq size, and minimizers
         val all_read_minimizers = extractReadMinimizers(current_read)
         //set method for predicted the coordinates of a node with configuration parameters
-        val predict_coordinates = predictCoords(current_read.name, config.debug) _
-        if (verbose) println(timeStamp + "Processing read " + current_read.name + " of " + current_read.length + " nt")
+        val predict_coordinates = predictCoords(current_read.name, config.verbose) _
+        if (config.verbose) println(timeStamp + "Processing read " + current_read.name + " of " + current_read.length + " nt")
         //get overlapping nodes and minimizers hits as well as minimizer orphans
         val (node2kmers, minimizer_orphans) = {
           val tmp = all_read_minimizers.foldLeft((Map[Int, Set[Int]](), List[(Int, Int)]())) {
@@ -237,7 +266,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
         val (aligned_nodes, failed_clusters) = {
           val parent_tmp = node2kmers.foldLeft((List[(Int, (Int, Int), Int, Int)](), Set[Int]())) {
             case ((found_nodes, _failed_clusters), (node, kmers)) => {
-              if (verbose) println(timeStamp + "--Processing node " + node + " with " + kmers.size + " kmers")
+              if (config.verbose) println(timeStamp + "--Processing node " + node + " with " + kmers.size + " kmers")
               //get average minimizer set size and seq size for current node
               val (avg_ms, avg_seq_size) = global_node_info_index(node)
               //compute maximum distance threshold
@@ -246,9 +275,9 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
               val (max_dense_cluster, total_clusters) = {
                 //cluster minimizers on the read
                 val tmp = clusterMinimizers(kmers.toSeq.map(all_read_minimizers(_)).flatten.toList,
-                  config.kmerSize, current_read.length, max_dist, config.debug)
-                if (verbose) println(timeStamp + "----Found " + tmp.size + " clusters")
-                if (config.debug)
+                  config.kmerSize, current_read.length, max_dist, config.verbose)
+                if (config.verbose) println(timeStamp + "----Found " + tmp.size + " clusters")
+                if (config.verbose)
                   println(timeStamp + "----Formed the following clusters: " + tmp.map(_.map(_._2).toList.sorted))
                 (if (tmp.isEmpty) Set[(Minimizer, Int)]() else tmp.maxBy(_.size), tmp.size)
               }
@@ -256,7 +285,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
               val cluster_width = (max_dense_cluster.maxBy(_._2)._2 - max_dense_cluster.minBy(_._2)._2) + 1
               //ratio between the size of the cluster and the node
               val size_difference_ratio = min(cluster_width, avg_seq_size).toDouble / max(cluster_width, avg_seq_size)
-              if (verbose) {
+              if (config.verbose) {
                 println(timeStamp + "----Using max dense cluster of " + max_dense_cluster.size + " minimizers")
                 println(timeStamp + "----Cluster length of: " + cluster_width)
                 println(timeStamp + "----Size difference ratio: " + size_difference_ratio)
@@ -265,7 +294,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
               val unique_hits = max_dense_cluster.map(_._1.hashvalue).size
               //get expected number of minimizer hits
               val expected_hits = expectedMinHits(node)
-              if (verbose) println(timeStamp + "----Expected " + expected_hits + "minimizer hits based on mean " +
+              if (config.verbose) println(timeStamp + "----Expected " + expected_hits + "minimizer hits based on mean " +
                 "minimizer set size of " + avg_ms)
               //size ratio is too low
               if (size_difference_ratio < config.lengthProportion) (found_nodes, _failed_clusters)
@@ -312,7 +341,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                   }
                   //get orientation of alignment, this is just to be able to output occurrance map in debug mode
                   val final_orientation = tmp._1.toList.sortBy(-_._2).head._1
-                  if (config.debug) println(timeStamp + "----Orientation map: " + tmp._1)
+                  if (config.verbose) println(timeStamp + "----Orientation map: " + tmp._1)
                   //predict best start/end coordinates
                   val (_start, _end) = predict_coordinates(node, final_orientation, avg_seq_size, tmp._2.sortBy(_._2))
                   //return oreitnation and coords
@@ -320,7 +349,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                 }
                 //move on if could not find reliable coordinates
                 if (start == -1 && end == -1) {
-                  if (config.debug) {
+                  if (config.verbose) {
                     println("----WARNING: Could not find reliable coordinates for read " + current_read.name +
                       " during alignment with node " + node + " using max dense cluster of " + max_dense_cluster +
                       ". Skipping node alignment")
@@ -328,7 +357,7 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
                   (found_nodes, max_dense_cluster.foldLeft(_failed_clusters)((b, a) => b + (a._2)))
                 }
                 else {
-                  if (verbose) {
+                  if (config.verbose) {
                     println(timeStamp + "----Node is alignable.")
                     println(timeStamp + "----Node has an average size of: " + avg_seq_size)
                     println(timeStamp + "----Predicted start/end coordinates: " + (start, end))
@@ -343,18 +372,18 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
         }
         //if read is unmapped
         if (aligned_nodes.isEmpty) {
-          if (verbose) println(timeStamp + "--No alignments found")
+          if (config.verbose) println(timeStamp + "--No alignments found")
           pw.println("P" + "\t" + current_read.name + "\t\t" + current_read.length + "M")
         }
         //read is mapped
         else {
-          if (config.debug) println(timeStamp + "Found the following alignment: " + aligned_nodes)
+          if (config.verbose) println(timeStamp + "Found the following alignment: " + aligned_nodes)
           //curate alignments by identifying ambiguous alignments and processing unaligned regions
           val curated_alignments = {
             //get initial curated alignments containing ambiugous alignemnts
             val tmp = curateAlignments(aligned_nodes, current_read.length,
               (smallest_gene * 0.8).toInt, average_kmer_set_size_ratio)
-            if (config.debug) println(timeStamp + "Initial curated alignment: " + tmp)
+            if (config.verbose) println(timeStamp + "Initial curated alignment: " + tmp)
             //iterate through each alignment and process unaligned regions
             tmp.filter(alignment =>
               //alignment is not an unaligned region, retain
@@ -390,48 +419,69 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
             if (orientation == '-') tmp.reverse.map(_.reverse)
             else tmp
           }
-          if (config.debug) {
+          if (config.verbose) {
             println(timeStamp + "Curated alignment: " + curated_alignments)
             println(timeStamp + "Split alignments: " + max_contiguous_alignments)
-            //unaligned.foreach(region => println(region, failed_clusters.filter(x => region._1 <= x && region._2 >=x).size))
           }
           //create alignment string for each max contiguous alignment
           val aligned_structure = max_contiguous_alignments.map(_.map(_._1 + "+").mkString(","))
-          if (verbose) println(timeStamp + "--Found the following alignment(s): " + aligned_structure.mkString(";"))
+          if (config.verbose) println(timeStamp + "--Found the following alignment(s): " + aligned_structure.mkString(";"))
           //read is unmapped
           if (max_contiguous_alignments.forall(_.isEmpty))
+          {
             pw.println("P" + "\t" + current_read.name + "\t\t" + current_read.length + "M")
+          }
           //read is mapped somewhere
-          else aligned_structure.foreach(alignment =>
-            pw.println("P" + "\t" + current_read.name + "\t" + alignment + "\t" + current_read.length + "M"))
+          else aligned_structure.foreach{alignment =>
+              pw.println("P" + "\t" + current_read.name + "\t" 
+                + alignment + "\t" + current_read.length + "M")
+              alignment.replaceAll(",","").split("[\\+]").foreach{node =>
+                  pwg.println("P" + "\t" + current_read.name + "\t" 
+                    + nodeGene.get(node.toInt).get.sorted.mkString(",") + "\t" 
+                    + current_read.length + "M")
+                  pws.print(current_read.name + "\t")
+                  for (strain_i <- strainNames) {
+                    if (nodeStrain.get(node.toInt).get.contains(strain_i)) {
+                      pws.print("1\t")
+                    } else {
+                      pws.print("0\t")
+                    }
+                  }
+                  pws.println("")
+              }
+            }
+          }
         }
-      }
       }
     }
 
-    pw.close
+    // close files
+    pw.close()
+    pwg.close()
+    pws.close()
     println(timeStamp + "Alignment completed")
-    updateCanonicalQuiver(config.outputDir, output_name, config.canonicalQuiver, config.minCoverage)
+    updateCanonicalQuiver(config, output_name)
   }
 
   /**
     * Method to update canonical quiver
     */
-  def updateCanonicalQuiver(output_directory: File, output_name: String, cq: File, min_coverage: Int): Unit = {
-    val tmp_output = new File(output_directory + "/." + output_name + ".tmp")
+  def updateCanonicalQuiver(config: ConfigHandling.fullConfig, output_name: String): Unit = {
+    val tmp_output = new File(config.outputDir+ "/." + output_name + ".tmp")
     println(timeStamp + "Computing edge coverage")
     //iterate through alignments and keep track of edges and their coverage as well as total reads and unmapped
     val (edge_coverage, node_coverage, total_alignments, unmapped) = getAlignmentStats(tmp_output)
     println(timeStamp + "Found " + total_alignments + " total alignments, of which " +
       (unmapped.toDouble / total_alignments) * 100 + "% are unmapped")
     println(timeStamp + "Writing coverage to disk")
-    val pws = new PrintWriter(output_directory + "/" + output_name.replace(".gfa", ".static.gfa"))
-    pws.println("H\tAlignment to canonical quiver (static)")
-    val pwd = new PrintWriter(output_directory + "/" + output_name.replace(".gfa", ".dynamic.gfa"))
+    val pws = new PrintWriter(config.outputDir+ "/" + output_name.replace(".gfa", ".static.gfa"))
+    if (config.staticOutput) pws.println("H\tAlignment to canonical quiver (static)")
+    val pwd = new PrintWriter(config.outputDir+ "/" + output_name.replace(".gfa", ".dynamic.gfa"))
     pwd.println("H\tAlignment to canonical (dynamic)")
+
     //load canonical quiver and and output nodes and edges with coverage information while retaining edges never
     // observed before
-    openFileWithIterator(cq).foldLeft(edge_coverage)((filtered_coverage, line) => {
+    openFileWithIterator(config.canonicalQuiver).foldLeft(edge_coverage)((filtered_coverage, line) => {
       //get line type
       val line_split = line.split("\t")
       line_split.head match {
@@ -444,9 +494,9 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
           //update line with coverage
           val updated_line = updateWithCoverage(line, coverage)
           //if coverage is high enough, output to dynamic gfa
-          if (coverage >= min_coverage) pwd.println(updated_line)
-          //output to static gfa, regardless
-          pws.println(updated_line)
+          if (coverage >= config.minCoverage) pwd.println(updated_line)
+          //output to static gfa anyway (only if desired)
+          if (config.staticOutput) pws.println(updated_line)
           //remove edge
           filtered_coverage - edge
         }
@@ -459,9 +509,9 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
           //update line with coverage
           val updated_line = updateWithCoverage(line, coverage)
           //output to dynamic if coverage is high enough
-          if (coverage >= min_coverage) pwd.println(updated_line)
-          //output to static regardless
-          pws.println(updated_line)
+          if (coverage >= config.minCoverage) pwd.println(updated_line)
+          //output to static regardless (if desired)
+          if (config.staticOutput) pws.println(updated_line)
           filtered_coverage
         }
         //Something else, move on
@@ -470,19 +520,24 @@ object AlignReads extends ReadGFA with GraphIndex with ReadUtils with MMethods w
     })
       //add new edges to output
       .foldLeft(0)((index, new_edge) => {
-      if (new_edge._2 >= min_coverage) pwd.println("L\t" + new_edge._1._1 + "\t+\t" + new_edge._1._2 +
-        "\t+\t1M\tFC:i:" + new_edge._2)
+      if (new_edge._2 >= config.minCoverage) pwd.println("L\t" + new_edge._1._1 +
+        "\t+\t" + new_edge._1._2 + "\t+\t1M\tFC:i:" + new_edge._2)
       index + 1
     })
 
     //iterate through alignments once more and output to file
     openFileWithIterator(tmp_output).foreach(x => {
       pwd.println(x)
-      pws.println(x)
+      if (config.staticOutput) pws.println(x)
     })
     pwd.close()
-    pws.close()
+    if (config.staticOutput) pws.close()
+
     tmp_output.delete()
-    println("Successfully completed!")
+    if (!(config.staticOutput)) {
+      val pws = new File(config.outputDir+ "/" + output_name.replace(".gfa", ".static.gfa"))
+      pws.delete()
+    }
+    println(timeStamp + "Successfully completed!")
   }
 }

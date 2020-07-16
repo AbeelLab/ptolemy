@@ -16,52 +16,58 @@ import utilities.FileHandling.{timeStamp, verifyDirectory, verifyFile, openFileW
 import scala.collection.immutable.{HashMap, HashSet}
 import quiver._
 import utilities.HLGG
+import utilities.ConfigHandling
 
 import scala.annotation.tailrec
 
 object StructuralVariantCaller extends ConstructGFA {
 
-  case class Config(
-                     hlgg: File = null,
-                     outputDir: File = null,
-                     reference: File = null,
-                     verbose: Boolean = false,
-                     dump: Boolean = false,
-                   traverseNodes: Boolean = false
-                   )
+//  case class Config(
+//                     hlgg: File = null,
+//                     outputDir: File = null,
+//                     reference: File = null,
+//                     verbose: Boolean = false,
+//                     dump: Boolean = false,
+//                     traverseNodes: Boolean = false
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("variant-calling") {
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("variant-calling") {
       opt[File]('h', "hlgg-gfa") required() action { (x, c) =>
         c.copy(hlgg = x)
-      } text ("GFA file of the HLGG.")
+      } text ("\n"+" "*27+"GFA file of the HLGG")
       opt[File]('o', "output-directory") required() action { (x, c) =>
         c.copy(outputDir = x)
-      } text ("Output directory.")
-      note("\nOPTIONAL\n")
+      } text ("Output directory for variant-calling")
+      note("\nOPTIONAL FLAGS")
       opt[File]("reference-population") action { (x, c) =>
         c.copy(reference = x)
-      } text ("Will perform the 'reference-cut operation' the given set of genome ID's.")
+      } text ("Set to perform the 'reference-cut operation' to the \n"+
+        " "*27+"given set of genome ID's")
       opt[Unit]("traverse-by-nodes") action { (x, c) =>
         c.copy(traverseNodes = true)
-      } text ("Traverse by node label (default is to traverse by edge-label).")
+      } text ("\n"+" "*27+"Traverse by node label (default is "+defaultValues.traverseNodes+", i.e to \n"+
+        " "*27+"traverse by edge-label)")
       opt[Unit]("dump") action { (x, c) =>
         c.copy(dump = true)
-      }
+      } text ("\n"+" "*27+"Write intermediate tables to disk ("+defaultValues.dump+" by default)")
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
-      }
-
+      } text("\n"+" "*27+"Display extra process information (default is "+ defaultValues.verbose+")")
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.outputDir)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "variant-calling")
+      //check whether hlgg file exists prior to VC
       verifyFile(config.hlgg)
       structuralVariantCaller(config)
     }
   }
 
-  def structuralVariantCaller(config: Config): Unit = {
+  def structuralVariantCaller(config: ConfigHandling.fullConfig): Unit = {
     println(timeStamp + "Loading canonical quiver")
     //load HLGG from given GFA file
     val hlgg = new HLGG(config.hlgg)

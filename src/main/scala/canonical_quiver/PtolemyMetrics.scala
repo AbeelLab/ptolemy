@@ -29,7 +29,7 @@ object PtolemyMetrics extends GFFutils with MinimapUtils {
   def main(args: Array[String]): Unit = {
     Locale.setDefault(new Locale("en", "US"))
     val parser = new scopt.OptionParser[Config]("ptolemy-metrics") {
-      opt[File]('q', "canonical-quiver") required() action {
+      opt[File]('c', "canonical-quiver") required() action {
         (x, c) => c.copy(quiver = x)
       } text ("Canonical quiver representation.")
       opt[File]('o', "output-directory") required() action {

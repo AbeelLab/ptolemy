@@ -4,6 +4,7 @@ import java.io.{File, PrintWriter}
 
 import utilities.FileHandling.{openFileWithIterator, timeStamp, verifyDirectory}
 import utilities.GFAutils.{ConstructGFA}
+import utilities.ConfigHandling
 
 import scala.collection.immutable.{HashMap, HashSet}
 
@@ -16,50 +17,55 @@ import scala.collection.immutable.{HashMap, HashSet}
   */
 object ConstuctCanonicalQuiver extends ConstructGFA {
 
-  case class Config(
-                     syntenicAnchors: File = null,
-                     database: File = null,
-                     outputDir: File = null,
-                     verbose: Boolean = false,
-                     msa: Boolean = false,
-                     isCircular: Boolean = false,
-                     dump: Boolean = false
-                   )
+//  case class Config(
+//                     syntenicAnchors: File = null,
+//                     database: File = null,
+//                     outputDir: File = null,
+//                     verbose: Boolean = false,
+//                     msa: Boolean = false,
+//                     isCircular: Boolean = false,
+//                     dump: Boolean = false
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("canonical-quiver") {
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("canonical-quiver") {
       opt[File]('s', "syntenic-anchors") required() action { (x, c) =>
         c.copy(syntenicAnchors = x)
-      } text ("Path to file containing syntenic anchors.")
-      opt[File]("db") required() action { (x, c) =>
+      } text ("Path to file containing syntenic anchors")
+      opt[File]('d',"db") required() action { (x, c) =>
         c.copy(database = x)
-      } text ("Directory path of database (e.g. output directory of 'extract' module).")
+      } text ("\n"+" "*27+"Directory path of database (i.e. output-directory used "+
+      "\n"+" "*27+"for the 'extract' module)")
       opt[File]('o', "output-directory") required() action { (x, c) =>
         c.copy(outputDir = x)
-      } text ("Output directory.")
-      note("\nOPTIONAL\n")
-      opt[Unit]("circular") action { (x, c) =>
-        c.copy(isCircular = true)
-      } text ("Genome can be circular (default is false).")
+      } text ("Output directory")
+      note("\nOPTIONAL FLAGS")
+//      opt[Unit]("circular") action { (x, c) =>
+//        c.copy(isCircular = true)
+//      } text ("Genome can be circular (default is false)")
       opt[Unit]("msa-groups") action { (x, c) =>
         c.copy(msa = true)
-      } text ("Turn on to output file of syntenic anchors to database for inducing MSA in each syntenic anchor.")
+      } text ("\n"+" "*27+"Turn on to output file of syntenic anchors to database"+
+        "\n"+" "*27+"for inducing Multiple-Sequence-Alignment in each"+
+        "\n"+" "*27+"syntenic anchor ("+defaultValues.msa+" by default)")
       opt[Unit]("dump") action { (x, c) =>
         c.copy(dump = true)
-      }
+      } text ("\n"+" "*27+"Write intermediate tables to disk ("+defaultValues.dump+" by default)")
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
-      }
-
+      } text("\n"+" "*27+"Display extra process information (default is "+ defaultValues.verbose+")")
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.database)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "canonical-quiver")
       constructHLGG(config)
     }
   }
 
-  def constructHLGG(config: Config): Unit = {
+  def constructHLGG(config: ConfigHandling.fullConfig): Unit = {
     println(timeStamp + "Fetching hashmap Z")
     val path_hashmap_Z = config.database.listFiles().find(_.getName == "global_z.txt").get
     val path_hashmap_Y = config.database.listFiles().find(_.getName == "global_y.txt").get
@@ -149,9 +155,12 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
         }
       }
       }
+
     println(timeStamp + "Constructed canonical quiver with " + hlgg_nodes.size + " nodes and " + hlgg_edges.map(_._2.size).sum +
       " edges")
+    val path2Nodes = scala.collection.mutable.Map[String,Seq[Boolean]]()
     println(timeStamp + "Writing GFA file to disk")
+    val sortedNodeID = hlgg_nodes.toSeq.sorted
     val pw = new PrintWriter(config.outputDir + "/canonical_quiver.gfa")
     pw.println(getGFAHeader)
     hlgg_nodes.foreach(x => pw.println(constructSegmentLine(x) + addGenomeCountField(node_to_genome_count.get(x))))
@@ -167,12 +176,28 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
       })
       //output paths
       pw.println(Seq("P", sequence, orf_to_node_ids.mkString(","), "*").mkString("\t"))
+
+      // boolean (falses) list for the matrix table for current path
+      val nodeInPath = scala.collection.mutable.Seq.fill(hlgg_nodes.size)(false)
+      // loop over the nodes of the path
+      for (node <- orf_to_node_ids) {
+        // change the current node label of sorted sequence of node ID to true
+        nodeInPath.update(sortedNodeID.indexOf(node.dropRight(1).toInt), true)
+      }
+      // assign the current nodeInPath sequence to the map
+      path2Nodes(sequence) = nodeInPath
     })
+
+    // map to store the relation between strains and paths
+    val strain2Paths = scala.collection.mutable.Map[String, List[String]]()
+    // save the strains into the file
     openFileWithIterator(path_hashmap_Y).foreach(line => {
       val split = line.split("\t")
       pw.println(Seq("G", split.head, split(1)).mkString("\t"))
+      strain2Paths(split.head) = split(1).split(",").toList
     })
     pw.close
+
     val pw_orfids = new PrintWriter(config.database + "/orf2node_id.txt")
     openFileWithIterator(path_orfids).foreach(line => {
       val split = line.split("\t")
@@ -181,6 +206,33 @@ object ConstuctCanonicalQuiver extends ConstructGFA {
       pw_orfids.println(Seq(split(0), split(1), orf_id, node_id).mkString("\t"))
     })
     pw_orfids.close
+
+    // from strain2Paths and path2Nodes, strain2Nodes shoould be computed with 
+    // a logical OR between the path nodes of each strain
+    val strain2Nodes = scala.collection.mutable.Map[String, Seq[Boolean]]()
+    scala.collection.immutable.ListMap(strain2Paths.toSeq.sortBy(_._1):_*).foreach{
+      case (strain_i, pathList) =>
+        var nodeList = scala.collection.mutable.Seq.fill(hlgg_nodes.size)(false)
+        pathList.foreach{case path_i =>
+          for (i <- nodeList.indices)
+            nodeList(i) = nodeList(i) || path2Nodes(path_i)(i)
+        }
+        strain2Nodes(strain_i) = nodeList
+    }
+
+    // print the matrix table for the canonical quiver
+    val pws = new PrintWriter(config.outputDir + "/canonical_quiver.strains.out")
+    // print the header
+    pws.print("Node\t")
+    strain2Nodes.foreach{p => pws.print(p._1 + "\t")}
+    pws.println("")
+    for ((nodeID, i) <- sortedNodeID.zipWithIndex) {
+      pws.print(nodeID + "\t")
+      strain2Nodes.foreach{p => if (p._2(i)) pws.print("1\t") else pws.print("0\t")  }
+      pws.println("")
+    }
+    pws.close
+
     println(timeStamp + "Successfully completed!")
   }
 

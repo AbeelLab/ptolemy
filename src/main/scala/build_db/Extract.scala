@@ -5,6 +5,7 @@ import java.io.{File, PrintWriter}
 import atk.FastaIterator
 import utilities.FileHandling.{tLines, timeStamp, verifyDirectory, verifyFile}
 import utilities.{GFFutils, MinimapUtils}
+import utilities.ConfigHandling
 
 import scala.annotation.tailrec
 import scala.collection.immutable.HashMap
@@ -16,61 +17,72 @@ import scala.collection.immutable.HashMap
   *
   * Description:
   */
+
 object Extract extends tLines with GFFutils with MinimapUtils {
 
-  case class Config(
-                     genomesFile: File = null,
-                     outputDir: File = null,
-                     repeatRadius: Int = 10,
-                     showWarnings: Boolean = false,
-                     splitOverlaps: Double = 0.15,
-                     minInterSize: Int = 11,
-                     isCircular: Boolean = false,
-                     useGene: Boolean = true,
-                     verbose: Boolean = false
-                   )
+//  case class Config(
+//                     genomesFile: File = null,
+//                     database: File = null,
+//                     outputDir: File = null,
+//                     repeatRadius: Int = 10,
+//                     showWarnings: Boolean = false,
+//                     splitOverlaps: Double = 0.15,
+//                     minInterSize: Int = 11,
+//                     isCircular: Boolean = false,
+//                     useGene: Boolean = true,
+//                     verbose: Boolean = false
+//                   )
 
   def main(args: Array[String]) {
-    val parser = new scopt.OptionParser[Config]("extract") {
+    val defaultValues = ConfigHandling.fullConfig()
+    val parser = new scopt.OptionParser[ConfigHandling.fullConfig]("extract") {
       opt[File]('g', "genomes") required() action { (x, c) =>
         c.copy(genomesFile = x)
-      } text ("Tab-delimited file containing (genome ID, FASTA path, and GFF file), on per line.")
+      } text ("\n"+" "*27+"Tab-delimited file containing (genome ID, FASTA path,\n"+
+        " "*27+"GFF path), one per line")
       opt[File]('o', "output-database") required() action { (x, c) =>
-        c.copy(outputDir = x)
-      } text ("Output directory for database to be stored.")
-      note("\nOPTIONAL\n")
+        c.copy(outputDir = x, database = x)
+      } text ("Output directory for database to be stored")
+      note("\nOPTIONAL FLAGS")
       opt[Int]('i', "min-intergenic") action { (x, c) =>
         c.copy(minInterSize = x)
-      } text ("Minimum size of an intergenic sequence to output to database (default is 11).")
+      } text ("Minimum size of an intergenic sequence to output to \n"+
+        " "*27+"database (default is "+ defaultValues.minInterSize +")")
       opt[Double]("split-overlaps") action { (x, c) =>
         c.copy(splitOverlaps = x)
-      } text ("Split ORFs that overlap by this percentage using the smallest size of the two (default is 0.15).")
+      } text ("Split ORFs that overlap by this percentage using the \n"+
+        " "*27+"smallest size of the two (default is "+ defaultValues.splitOverlaps +")")
       opt[Unit]("circular") action { (x, c) =>
         c.copy(isCircular = true)
-      } text ("Genomes are circular (turned off by default).")
+      } text ("\n"+" "*27+"Genomes are circular ("+ defaultValues.isCircular +" by default)")
       opt[Int]('r', "repeat-radius") action { (x, c) =>
         c.copy(repeatRadius = x)
-      } text ("Remove any edge that are not within r positions away (default is 10). Used for identifying repetative" +
-        " regions")
+      } text ("Remove any edge that is not within r positions away,\n"+
+        " "*27+"used to identify repetative regions (default is "+ defaultValues.repeatRadius +")")
       opt[Unit]("use-cds") action { (x, c) =>
         c.copy(useGene = false)
-      } text("Use 'CDS' annotations instead of 'gene' annotations (default is false, use 'gene' annotations).")
+      } text("\n"+" "*27+"Use 'CDS' annotations instead of 'gene' annotations\n"+
+        " "*27+"(default is "+ defaultValues.useGene +", use 'gene' annotations)")
       opt[Unit]("show-warnings") action { (x, c) =>
         c.copy(showWarnings = true)
-      }
+      } text("\n"+" "*27+"Unveil, otherwise hidden, possible warnings (set by\n"+
+        " "*27+"default to "+defaultValues.showWarnings+")")
       opt[Unit]("verbose") action { (x, c) =>
         c.copy(verbose = true)
-      }
+      } text("\n"+" "*27+"Display extra process information (default is "+ defaultValues.verbose+")")
     }
-    parser.parse(args, Config()).map { config =>
+    parser.parse(args, ConfigHandling.fullConfig()).map { parsedConfig =>
       //check whether output directory exists. If not, create it.
-      verifyDirectory(config.outputDir)
+      verifyDirectory(parsedConfig.database)
+      // handle options and flags for the current module
+      val config = ConfigHandling.parameterManager(parsedConfig, "extract")
+      //check whether genome file exists prior to runing the extraction
       verifyFile(config.genomesFile)
       extract(config)
     }
   }
 
-  def extract(config: Config): Unit = {
+  def extract(config: ConfigHandling.fullConfig): Unit = {
     //get annotation type
     val annotation_type = if(config.useGene) "gene" else "CDS"
     //open list of genomes
@@ -302,9 +314,10 @@ object Extract extends tLines with GFFutils with MinimapUtils {
     }}
 
     //output map z and z prime to database
-    map_z.foreach{case (sequence_id, orf_ids) => {
-      pw_Z.println(sequence_id + "\t" + orf_ids.mkString(","))
-      orf_ids.foreach(orf => pw_Z_prime.println(orf + "\t" + sequence_id))
+    scala.collection.immutable.ListMap(map_z.toSeq.sortBy(_._1):_*).foreach{
+      case (sequence_id, orf_ids) => {
+        pw_Z.println(sequence_id + "\t" + orf_ids.mkString(","))
+        orf_ids.foreach(orf => pw_Z_prime.println(orf + "\t" + sequence_id))
     }}
 
     //close output files
