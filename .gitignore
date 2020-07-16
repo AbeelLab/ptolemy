@@ -26,5 +26,7 @@ META-INF/
 # Misc
 run-ptolemy.sh
 run-ptolemy-single.sh
+run-ptolemy_long.sh
 test-input.txt
 bin/
+project/project/
